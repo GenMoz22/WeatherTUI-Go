@@ -274,7 +274,7 @@ func (m model) View() string {
 		keyStyle.Render("Enter"), descStyle.Render("Search City"),
 		keyStyle.Render("Esc"), descStyle.Render("Exit"),
 		lipgloss.NewStyle().Foreground(gray).Padding(0, 1).Render("│"),
-		lipgloss.NewStyle().Foreground(cyan).Italic(true).Render(fmt.Sprintf("daemon: core-ui v4.6 tmux-ready [res: %dx%d]", m.termWidth, m.termHeight)),
+		lipgloss.NewStyle().Foreground(cyan).Italic(true).Render(fmt.Sprintf("WeatherTUI - [res: %dx%d]", m.termWidth, m.termHeight)),
 	)
 
 	return "\n" + mainDashboard + "\n\n" + statusBar + "\n"
