@@ -186,7 +186,6 @@ func (m model) View() string {
 			labelStyle.Render("[AQI ]"), "Air Quality:", aqiDesc,
 		)
 
-		// Uniamo l'header fisso in alto e lasciamo che Lip Gloss distribuisca verticalmente le righe nello spazio rimanente
 		fullCurrentView := currentHeader + "\n\n" + lipgloss.PlaceVertical(currentInnerHeight-3, lipgloss.Top, metricsContent)
 		currentBox = boxStyle.Width(leftWidth - 2).Height(currentInnerHeight).Render(fullCurrentView)
 	} else {
@@ -203,7 +202,7 @@ func (m model) View() string {
 	leftColumn := lipgloss.JoinVertical(lipgloss.Left, searchBox, currentBox)
 
 	// ------------------------------------------------------------------------
-	// 3. PANNELLO PREVISIONI 14 GIORNI (Allineamento Rigido Tabelle e Barre)
+	// 3. PANNELLO PREVISIONI 14 GIORNI
 	// ------------------------------------------------------------------------
 	var forecastBox string
 	forecastHeader := panelTitleStyle.Render(" METRIC: 14-DAY CORE FORECAST ") + "\n\n"
