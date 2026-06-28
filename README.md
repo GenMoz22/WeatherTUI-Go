@@ -4,7 +4,6 @@ Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates pa
 
 ## Core Dependencies
 - https://github.com/charmbracelet/bubbletea: The Elm-inspired TUI runtime engine.
-- https://github.com/charmbracelet/bubbles/textinput: Component for terminal keyboard interactions.
 - https://github.com/charmbracelet/lipgloss: Layout builder and advanced terminal styling primitives.
 - https://github.com/natefinch/lumberjack: Rolling file logger for system tracking.
 
