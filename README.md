@@ -1,10 +1,12 @@
-Terminal User Interface (TUI) weather application written in Go that delivers instant 14-day forecasts and atmospheric telemetry directly to your command line. Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates parallel integrations with Open-Meteo APIs alongside an intelligent, concurrent-safe internal caching engine.
+Terminal User Interface (TUI) weather application written in Go that delivers instant 14-day forecasts and atmospheric telemetry directly to your command line. 
+
+Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates parallel integrations with Open-Meteo APIs alongside an intelligent, concurrent-safe internal caching engine.
 
 ## Core Dependencies
-- github.com/charmbracelet/bubbletea: The Elm-inspired TUI runtime engine.
-- github.com/charmbracelet/bubbles/textinput: Component for terminal keyboard interactions.
-- github.com/charmbracelet/lipgloss: Layout builder and advanced terminal styling primitives.
-- github.com/natefinch/lumberjack: Rolling file logger for system tracking.
+- https://github.com/charmbracelet/bubbletea: The Elm-inspired TUI runtime engine.
+- https://github.com/charmbracelet/bubbles/textinput: Component for terminal keyboard interactions.
+- https://github.com/charmbracelet/lipgloss: Layout builder and advanced terminal styling primitives.
+- https://github.com/natefinch/lumberjack: Rolling file logger for system tracking.
 
 ## Installation & Setup
 ### Prerequisites
@@ -13,15 +15,12 @@ Go (version 1.21 or higher)
 ### Installation Steps
 Clone the repository or navigate to your source directory:
 ```Bash
-git clone <repository-url>
-cd weather-tui
+git@github.com:GenMoz22/WeatherTUI-Go.git
+cd WeatherTUI-Go
 ```
 
 Initialize modules and fetch external libraries:
 ```Bash
-go mod init weather-app # If not already initialized
-go mod tidy
-
 Compile and execute the application:
 Bash
 go run main.go weather.go cache.go
@@ -37,17 +36,17 @@ The application interfaces with free-tier endpoints provided by Open-Meteo (no a
 
 1. Geocoding Engine
 - Endpoint: https://geocoding-api.open-meteo.com/v1/search
-- Parameters: name={city}&count=1&language=it&format=json
+- Parameters: `name={city}&count=1&language=it&format=json`
 - Role: Resolves literal query arguments to explicit floating-point latitude, longitude, and territorial origin parameters.
 
 2. Meteorological Forecast Engine
 - Endpoint: https://api.open-meteo.com/v1/forecast
-- Parameters: latitude={lat}&longitude={lon}&current=...&daily=...&timezone=auto&forecast_days=14
+- Parameters: `latitude={lat}&longitude={lon}&current=...&daily=...&timezone=auto&forecast_days=14`
 - Role: Extracts raw measurements for current atmospheric states alongside 14-day target cycles.
 
 3. Atmospheric Quality Analyzer
 - Endpoint: https://air-quality-api.open-meteo.com/v1/air-quality
-- Parameters: latitude={lat}&longitude={lon}&current=european_aqi
+- Parameters: `latitude={lat}&longitude={lon}&current=european_aqi`
 - Role: Evaluates localized air pollution markers mapped directly into customized UI visual threat levels (Excellent, Poor, Critical).
 
 ## Error Handling & Resilience
