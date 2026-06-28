@@ -18,10 +18,8 @@ git@github.com:GenMoz22/WeatherTUI-Go.git
 cd WeatherTUI-Go
 ```
 
-Initialize modules and fetch external libraries:
-```Bash
 Compile and execute the application:
-Bash
+```Bash
 go run main.go weather.go cache.go
 ```
 
