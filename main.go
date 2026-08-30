@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
-
+	"path/filepath"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -287,17 +287,52 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func initLogger() {
-	logFile := &lumberjack.Logger{Filename: "logs/weather_app.log", MaxSize: 10, MaxBackups: 3, MaxAge: 28}
-	logger := slog.New(slog.NewJSONHandler(io.MultiWriter(logFile), &slog.HandlerOptions{Level: slog.LevelDebug}))
+func getLogFilePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	logDir := filepath.Join(homeDir, ".local", "share", "WeatherTUI", "logs")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return "", err
+	}
+	return filepath.Join(logDir, "weather_app.log"), nil
+}
+
+func initLogger() *lumberjack.Logger {
+	logPath, err := getLogFilePath()
+	if err != nil {
+		log.Fatalf("Impossibile determinare il percorso del file di log: %v", err)
+	}
+
+	logFile := &lumberjack.Logger{
+		Filename:   logPath,
+		MaxSize:    10,
+		MaxBackups: 3,
+		MaxAge:     30,
+		Compress:   true,
+		LocalTime:  true,
+	}
+
+	// Inizializza l'handler JSON e imposta il livello minimo a DEBUG
+	logger := slog.New(slog.NewJSONHandler(io.MultiWriter(logFile), &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
 	slog.SetDefault(logger)
+
+	// Messaggio di avvio (genererà il JSON al lancio)
+	slog.Info("Avvio dell'applicazione WeatherCLI-Go")
+
+	return logFile
 }
 
 func main() {
-	_ = os.Mkdir("logs", os.ModePerm)
-	initLogger()
+	logFile := initLogger()
+	defer logFile.Close()
+
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
+		slog.Error(fmt.Sprintf("Fatal execution crash: %v", err))
 		log.Fatalf("Fatal execution crash: %v", err)
 	}
 }
