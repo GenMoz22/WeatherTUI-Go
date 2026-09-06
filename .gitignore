@@ -1,3 +1,4 @@
+# Executables and build artifacts
 *.exe
 *.exe~
 *.dll
@@ -5,29 +6,34 @@
 *.dylib
 weather-cli
 WeatherTUI-Go
+weather-tui
+weather-tui.*
 
+# Test and profiling artifacts
 *.test
 *.out
+*.prof
 
+# Runtime logs and local directories
 logs/
 *.log
 
-.vscode/
-#.vscode/*
-#!.vscode/settings.json
-#!.vscode/tasks.json
-#!.vscode/launch.json
-#!.vscode/extensions.json
+# Editor & IDE configurations
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 *.code-workspace
 
+# JetBrains IDEs (GoLand, IntelliJ IDEA)
 .idea/
 *.iws
 *.iml
 *.ipr
 /out/
 
+# Operating System specific files
 .DS_Store
 Thumbs.db
-
-weather-tui.*
-weather-tui
