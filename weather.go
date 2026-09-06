@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -83,6 +85,23 @@ func NewWeatherClient() *WeatherClient {
 	}
 }
 
+// getSystemLanguage attempts to detect the system's locale language code.
+// It parses common POSIX environment variables and defaults to "en" if missing.
+func getSystemLanguage() string {
+	envVars := []string{"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"}
+	for _, env := range envVars {
+		val := os.Getenv(env)
+		if val != "" && val != "C" {
+			// Parse formats like "it_IT.UTF-8" or "en_US"
+			parts := strings.Split(val, "_")
+			if len(parts) > 0 && len(parts[0]) == 2 {
+				return strings.ToLower(parts[0])
+			}
+		}
+	}
+	return "en" // Fallback language
+}
+
 // GetWeather queries Open-Meteo endpoints or returns cached responses.
 func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error) {
 	if cachedResponse, found := wc.cache.Get(city); found {
@@ -90,10 +109,11 @@ func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error
 		return cachedResponse, city, nil
 	}
 
-	slog.Info("Cache MISS. Executing geocoding lookup", "city", city)
+	sysLang := getSystemLanguage()
+	slog.Info("Cache MISS. Executing geocoding lookup", "city", city, "lang", sysLang)
 
 	encodedCity := url.QueryEscape(city)
-	geoURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=it&format=json", encodedCity)
+	geoURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=%s&format=json", encodedCity, sysLang)
 
 	resp, err := wc.client.Get(geoURL)
 	if err != nil {
