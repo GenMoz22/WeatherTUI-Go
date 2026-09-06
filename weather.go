@@ -37,6 +37,7 @@ type WeatherResponse struct {
 	Current   WeatherData
 	Daily     []DailyForecast
 	Timestamp int64
+	FromCache bool
 }
 
 type geoAPIResponse struct {
@@ -93,25 +94,27 @@ func getSystemLanguage() string {
 	for _, env := range envVars {
 		val := os.Getenv(env)
 		if val != "" && val != "C" {
-			// Parse formats like "it_IT.UTF-8" or "en_US"
 			parts := strings.Split(val, "_")
 			if len(parts) > 0 && len(parts[0]) == 2 {
 				return strings.ToLower(parts[0])
 			}
 		}
 	}
-	return "en" // Fallback language
+	return "en"
 }
 
 // GetWeather queries Open-Meteo endpoints or returns cached responses.
-func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error) {
-	if cachedResponse, found := wc.cache.Get(city); found {
+func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResponse, string, error) {
+	if forceRefresh {
+		wc.cache.Delete(city)
+	} else if cachedResponse, found := wc.cache.Get(city); found {
 		slog.Debug("Cache HIT", "city", city, "resolved_name", cachedResponse.CityName)
+		cachedResponse.FromCache = true
 		return cachedResponse, cachedResponse.CityName, nil
 	}
 
 	sysLang := getSystemLanguage()
-	slog.Info("Cache MISS. Executing geocoding lookup", "city", city, "lang", sysLang)
+	slog.Info("Cache MISS or Refresh. Executing geocoding lookup", "city", city, "lang", sysLang)
 
 	encodedCity := url.QueryEscape(city)
 	geoURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=%s&format=json", encodedCity, sysLang)
@@ -153,7 +156,6 @@ func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error
 			return WeatherResponse{}, "", fmt.Errorf("forecast decoding error: %w", err)
 		}
 
-		// Non-blocking Air Quality Index lookup
 		aqiURL := fmt.Sprintf("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%f&longitude=%f&current=european_aqi", loc.Latitude, loc.Longitude)
 		europeanAQI := 0
 		if aqiResp, err := wc.client.Get(aqiURL); err == nil {
@@ -214,6 +216,7 @@ func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error
 			Current:   currentData,
 			Daily:     dailyForecasts,
 			Timestamp: time.Now().UnixMilli(),
+			FromCache: false,
 		}
 
 		wc.cache.Put(city, finalResponse)

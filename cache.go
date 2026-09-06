@@ -46,3 +46,12 @@ func (cs *CacheService) Put(city string, response WeatherResponse) {
 	key := strings.ToLower(city)
 	cs.cache[key] = response
 }
+
+// Delete invalidates a specific city entry from the cache layer.
+func (cs *CacheService) Delete(city string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	key := strings.ToLower(city)
+	delete(cs.cache, key)
+}
