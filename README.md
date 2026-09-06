@@ -2,10 +2,18 @@ Terminal User Interface (TUI) weather application written in Go that delivers in
 
 Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates parallel integrations with Open-Meteo APIs alongside an intelligent, concurrent-safe internal caching engine.
 
+## Key Features
+- **Dynamic System Locale Detection**: Automatically detects user's system language (`LANG`, `LC_ALL`, `LC_MESSAGES`) to query localized location names via geocoding with English fallback.
+- **Async Visual Feedback**: Animated Lip Gloss-styled spinners integrated with Bubble Tea event loops during network dispatches.
+- **14-Day Visual Forecasts**: Relative precipitation probability density bars with dynamic color thresholds.
+- **In-Memory Cache**: Thread-safe TTL cache layer (`sync.RWMutex`, 30 min expiration) avoiding redundant API requests.
+- **Resilient Fallbacks**: Non-blocking European Air Quality Index (AQI) fetch with standard fallback and error boundary handling.
+
 ## Core Dependencies
-- https://github.com/charmbracelet/bubbletea: The Elm-inspired TUI runtime engine.
-- https://github.com/charmbracelet/lipgloss: Layout builder and advanced terminal styling primitives.
-- https://github.com/natefinch/lumberjack: Rolling file logger for system tracking.
+- [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea): Elm-inspired TUI runtime engine.
+- [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss): Layout builder and advanced terminal styling primitives.
+- [charmbracelet/bubbles](https://github.com/charmbracelet/bubbles): Terminal UI components (Input fields, Spinners).
+- [natefinch/lumberjack](https://github.com/natefinch/lumberjack): Rolling file logger for system tracking.
 
 ---
 
@@ -44,7 +52,7 @@ The application integrates with three endpoints from the **Open-Meteo** API ecos
 1. **Geocoding Engine**
 * **Endpoint**: `https://geocoding-api.open-meteo.com/v1/search`
 * **Parameters**: `name={city}&count=1&language=it&format=json`
-* **Role**: Resolves raw string queries into explicit latitude, longitude, city name, and country metadata.
+* **Role**: Dynamically detects the system's locale language (or defaults to en) and resolves raw string queries into explicit latitude, longitude, city name, and country metadata.
 
 
 2. **Meteorological Forecast Engine**
