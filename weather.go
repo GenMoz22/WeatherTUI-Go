@@ -31,8 +31,9 @@ type WeatherData struct {
 	AirQualityIndex   int
 }
 
-// WeatherResponse aggregates current telemetry, forecast cycles, and cache timestamp.
+// WeatherResponse aggregates current telemetry, forecast cycles, target location name, and cache timestamp.
 type WeatherResponse struct {
+	CityName  string
 	Current   WeatherData
 	Daily     []DailyForecast
 	Timestamp int64
@@ -105,8 +106,8 @@ func getSystemLanguage() string {
 // GetWeather queries Open-Meteo endpoints or returns cached responses.
 func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error) {
 	if cachedResponse, found := wc.cache.Get(city); found {
-		slog.Debug("Cache HIT", "city", city)
-		return cachedResponse, city, nil
+		slog.Debug("Cache HIT", "city", city, "resolved_name", cachedResponse.CityName)
+		return cachedResponse, cachedResponse.CityName, nil
 	}
 
 	sysLang := getSystemLanguage()
@@ -209,6 +210,7 @@ func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error
 		}
 
 		finalResponse := WeatherResponse{
+			CityName:  fullName,
 			Current:   currentData,
 			Daily:     dailyForecasts,
 			Timestamp: time.Now().UnixMilli(),
