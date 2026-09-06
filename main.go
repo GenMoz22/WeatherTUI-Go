@@ -186,7 +186,13 @@ func (m model) View() string {
 		// 2. ATMOSPHERE MONITOR PANEL
 		// ------------------------------------------------------------------------
 		var currentBox string
-		currentHeader := panelTitleStyle.Render(" MONITOR: ATMOSPHERE ")
+
+		// Dynamically update the panel title to embed the location target when data is loaded
+		currentHeaderTitle := " MONITOR: ATMOSPHERE "
+		if m.hasData && m.cityName != "" {
+			currentHeaderTitle = fmt.Sprintf(" MONITOR: %s - ATMOSPHERE ", m.cityName)
+		}
+		currentHeader := panelTitleStyle.Render(currentHeaderTitle)
 
 		currentStyle := boxStyle
 		if m.err != nil {
@@ -214,10 +220,8 @@ func (m model) View() string {
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
-				"%s  %-12s %s\n"+
 				"%s  %-12s %s",
-				 labelStyle.Render("TARGET:"), "", highlightStyle.Render(m.cityName),
-						      labelStyle.Render("[TEMP]"), "Temperature:", highlightStyle.Render(fmt.Sprintf("%.1f °C", m.weather.Current.Temperature)),
+				 labelStyle.Render("[TEMP]"), "Temperature:", highlightStyle.Render(fmt.Sprintf("%.1f °C", m.weather.Current.Temperature)),
 						      labelStyle.Render("[HUMI]"), "Humidity:", valueStyle.Render(fmt.Sprintf("%d%%", m.weather.Current.Humidity)),
 						      labelStyle.Render("[WIND]"), "Wind Speed:", valueStyle.Render(fmt.Sprintf("%.1f km/h", m.weather.Current.WindSpeed)),
 						      labelStyle.Render("[SUNR]"), "Sun Rise:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunrise),
