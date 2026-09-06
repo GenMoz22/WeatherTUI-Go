@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Modelli Dati Globali
+// DailyForecast holds daily metric values.
 type DailyForecast struct {
 	Date              string
 	MaxTemp           float64
@@ -17,6 +17,7 @@ type DailyForecast struct {
 	PrecipProbability int
 }
 
+// WeatherData holds atmospheric current metrics and metadata.
 type WeatherData struct {
 	Temperature       float64
 	WindSpeed         float64
@@ -28,13 +29,13 @@ type WeatherData struct {
 	AirQualityIndex   int
 }
 
+// WeatherResponse aggregates current telemetry, forecast cycles, and cache timestamp.
 type WeatherResponse struct {
 	Current   WeatherData
 	Daily     []DailyForecast
 	Timestamp int64
 }
 
-// Strutture di unmarshalling JSON interne alle API
 type geoAPIResponse struct {
 	Results []struct {
 		Latitude  float64 `json:"latitude"`
@@ -68,12 +69,13 @@ type airQualityAPIResponse struct {
 	} `json:"current"`
 }
 
-// Client API
+// WeatherClient orchestrates HTTP calls against Open-Meteo APIs.
 type WeatherClient struct {
 	cache  *CacheService
 	client *http.Client
 }
 
+// NewWeatherClient initializes client instance with standard 10s timeout boundary.
 func NewWeatherClient() *WeatherClient {
 	return &WeatherClient{
 		cache:  NewCacheService(),
@@ -81,70 +83,68 @@ func NewWeatherClient() *WeatherClient {
 	}
 }
 
+// GetWeather queries Open-Meteo endpoints or returns cached responses.
 func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error) {
 	if cachedResponse, found := wc.cache.Get(city); found {
 		slog.Debug("Cache HIT", "city", city)
 		return cachedResponse, city, nil
 	}
 
-	// 1. Log Cache Miss e inizio Geocoding
-	slog.Info("Cache MISS. Esecuzione Geocoding per", "city", city)
+	slog.Info("Cache MISS. Executing geocoding lookup", "city", city)
 
 	encodedCity := url.QueryEscape(city)
-	geoUrl := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=it&format=json", encodedCity)
+	geoURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=it&format=json", encodedCity)
 
-	resp, err := wc.client.Get(geoUrl)
+	resp, err := wc.client.Get(geoURL)
 	if err != nil {
-		slog.Error("Errore rete geocoding", "city", city, "error", err)
+		slog.Error("Geocoding network error", "city", city, "error", err)
 		return WeatherResponse{}, "", fmt.Errorf("geocoding network error: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var geoData geoAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&geoData); err != nil || len(geoData.Results) == 0 {
-		slog.Error("Target posizione non trovato", "city", city)
+		slog.Error("Location target unresolved", "city", city)
 		return WeatherResponse{}, "", fmt.Errorf("location target not found")
 	}
 	loc := geoData.Results[0]
 	fullName := fmt.Sprintf("%s (%s)", loc.Name, loc.Country)
 
-	// 2. Fetch Weather Metrics + Log URL API
-	forecastUrl := fmt.Sprintf(
+	forecastURL := fmt.Sprintf(
 		"https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"+
 		"&current=temperature_2m,wind_speed_10m,uv_index,precipitation_probability,relative_humidity_2m"+
 		"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14",
 		loc.Latitude, loc.Longitude,
 	)
 
-		// Invia il log con l'URL completo della richiesta API
-		slog.Info("Richiesta API Meteo Avanzata", "url", forecastUrl)
+		slog.Info("Dispatching forecast request", "url", forecastURL)
 
-		wResp, err := wc.client.Get(forecastUrl)
+		wResp, err := wc.client.Get(forecastURL)
 		if err != nil {
-			slog.Error("Errore rete previsioni", "url", forecastUrl, "error", err)
+			slog.Error("Forecast network failure", "url", forecastURL, "error", err)
 			return WeatherResponse{}, "", fmt.Errorf("forecast network error: %w", err)
 		}
 		defer wResp.Body.Close()
 
 		var apiMeteo weatherAPIResponse
 		if err := json.NewDecoder(wResp.Body).Decode(&apiMeteo); err != nil {
-			slog.Error("Errore decodifica previsioni", "error", err)
+			slog.Error("Forecast payload decoding failed", "error", err)
 			return WeatherResponse{}, "", fmt.Errorf("forecast decoding error: %w", err)
 		}
 
-		// 3. Fetch Air Quality Index
-		aqiUrl := fmt.Sprintf("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%f&longitude=%f&current=european_aqi", loc.Latitude, loc.Longitude)
-		aqiResp, err := wc.client.Get(aqiUrl)
+		// Non-blocking Air Quality Index lookup
+		aqiURL := fmt.Sprintf("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%f&longitude=%f&current=european_aqi", loc.Latitude, loc.Longitude)
 		europeanAQI := 0
-		if err == nil {
+		if aqiResp, err := wc.client.Get(aqiURL); err == nil {
 			var apiAQI airQualityAPIResponse
 			if json.NewDecoder(aqiResp.Body).Decode(&apiAQI) == nil {
 				europeanAQI = int(apiAQI.Current.EuropeanAQI)
 			}
 			aqiResp.Body.Close()
+		} else {
+			slog.Warn("Air Quality API degraded gracefully", "error", err)
 		}
 
-		// Parsing Orari Alba/Tramonto
 		sunriseStr, sunsetStr := "N/A", "N/A"
 		if len(apiMeteo.Daily.Sunrise) > 0 && len(apiMeteo.Daily.Sunrise[0]) >= 16 {
 			sunriseStr = apiMeteo.Daily.Sunrise[0][11:16]
@@ -164,13 +164,27 @@ func (wc *WeatherClient) GetWeather(city string) (WeatherResponse, string, error
 			AirQualityIndex:   europeanAQI,
 		}
 
-		var dailyForecasts []DailyForecast
-		for i := 0; i < len(apiMeteo.Daily.Time); i++ {
+		dailyCount := len(apiMeteo.Daily.Time)
+		dailyForecasts := make([]DailyForecast, 0, dailyCount)
+		for i := 0; i < dailyCount; i++ {
+			maxTemp := 0.0
+			if i < len(apiMeteo.Daily.TempMax) {
+				maxTemp = apiMeteo.Daily.TempMax[i]
+			}
+			minTemp := 0.0
+			if i < len(apiMeteo.Daily.TempMin) {
+				minTemp = apiMeteo.Daily.TempMin[i]
+			}
+			precip := 0
+			if i < len(apiMeteo.Daily.PrecipProbability) {
+				precip = int(apiMeteo.Daily.PrecipProbability[i])
+			}
+
 			dailyForecasts = append(dailyForecasts, DailyForecast{
 				Date:              apiMeteo.Daily.Time[i],
-				MaxTemp:           apiMeteo.Daily.TempMax[i],
-				MinTemp:           apiMeteo.Daily.TempMin[i],
-				PrecipProbability: int(apiMeteo.Daily.PrecipProbability[i]),
+				MaxTemp:           maxTemp,
+				MinTemp:           minTemp,
+				PrecipProbability: precip,
 			})
 		}
 
