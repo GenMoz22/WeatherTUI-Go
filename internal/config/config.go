@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"encoding/json"
@@ -11,20 +11,20 @@ import (
 	"sync"
 )
 
-// Config represents persistent application settings and user data.
+// Config represents persistent application settings and user search data.
 type Config struct {
 	UseFahrenheit   bool     `json:"use_fahrenheit"`
 	FavoriteCity    string   `json:"favorite_city"`
 	RecentLocations []string `json:"recent_locations"`
 }
 
-// ConfigManager handles atomic thread-safe read and write operations for app configuration.
+// ConfigManager handles atomic, thread-safe read and write operations for app configuration.
 type ConfigManager struct {
 	mu       sync.Mutex
 	filePath string
 }
 
-// NewConfigManager initializes a ConfigManager resolving path ~/.local/share/WeatherTUI/config.json.
+// NewConfigManager initializes a ConfigManager resolving the path ~/.local/share/WeatherTUI/config.json.
 func NewConfigManager() (*ConfigManager, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -41,7 +41,7 @@ func NewConfigManager() (*ConfigManager, error) {
 	}, nil
 }
 
-// Load reads configuration from disk or returns default configuration if file is missing.
+// Load reads configuration from disk or returns default settings if file is missing.
 func (cm *ConfigManager) Load() (Config, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -102,14 +102,13 @@ func (cm *ConfigManager) Save(cfg Config) error {
 	return nil
 }
 
-// UpdateRecentAndFavorite mutates recent locations and favorite status according to business constraints.
+// UpdateRecentAndFavorite updates recent locations and favorite status according to rules.
 func UpdateRecentAndFavorite(recent []string, favorite string, newLoc string) ([]string, string) {
 	cleanLoc := strings.TrimSpace(newLoc)
 	if cleanLoc == "" {
 		return recent, favorite
 	}
 
-	// Do not insert the target city into recent locations if it is already designated as favorite
 	if strings.EqualFold(cleanLoc, favorite) {
 		return recent, favorite
 	}
@@ -121,10 +120,8 @@ func UpdateRecentAndFavorite(recent []string, favorite string, newLoc string) ([
 		}
 	}
 
-	// Always prepend newly searched city to top of history
 	updated = append([]string{cleanLoc}, updated...)
 
-	// Cap search history to max 3 items
 	if len(updated) > 3 {
 		updated = updated[:3]
 	}

@@ -1,4 +1,4 @@
-package main
+package weather
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -32,13 +33,63 @@ type WeatherData struct {
 	AirQualityIndex   int
 }
 
-// WeatherResponse aggregates current telemetry, forecast cycles, target location name, and cache timestamp.
+// WeatherResponse aggregates telemetry, forecast cycles, location name, and cache timestamp.
 type WeatherResponse struct {
 	CityName  string
 	Current   WeatherData
 	Daily     []DailyForecast
 	Timestamp int64
 	FromCache bool
+}
+
+// CacheService provides concurrent-safe in-memory caching for weather telemetry.
+type CacheService struct {
+	mu                sync.RWMutex
+	cache             map[string]WeatherResponse
+	expirationMinutes int64
+}
+
+// NewCacheService initializes the cache layer with a default 30-minute expiration TTL.
+func NewCacheService() *CacheService {
+	return &CacheService{
+		cache:             make(map[string]WeatherResponse),
+		expirationMinutes: 30,
+	}
+}
+
+func (cs *CacheService) isExpired(timestamp int64) bool {
+	return (time.Now().UnixMilli() - timestamp) > (cs.expirationMinutes * 60 * 1000)
+}
+
+// Get retrieves cached weather telemetry if present and valid.
+func (cs *CacheService) Get(city string) (WeatherResponse, bool) {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	key := strings.ToLower(city)
+	cached, found := cs.cache[key]
+	if found && !cs.isExpired(cached.Timestamp) {
+		return cached, true
+	}
+	return WeatherResponse{}, false
+}
+
+// Put inserts weather telemetry into cache.
+func (cs *CacheService) Put(city string, response WeatherResponse) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	key := strings.ToLower(city)
+	cs.cache[key] = response
+}
+
+// Delete invalidates a cached entry.
+func (cs *CacheService) Delete(city string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	key := strings.ToLower(city)
+	delete(cs.cache, key)
 }
 
 type geoAPIResponse struct {
@@ -75,13 +126,13 @@ type airQualityAPIResponse struct {
 	} `json:"current"`
 }
 
-// WeatherClient orchestrates HTTP calls against Open-Meteo APIs.
+// WeatherClient orchestrates HTTP calls against Open-Meteo services.
 type WeatherClient struct {
 	cache  *CacheService
 	client *http.Client
 }
 
-// NewWeatherClient initializes client instance with standard 10s timeout boundary.
+// NewWeatherClient creates a client instance enforcing a 10s timeout limit.
 func NewWeatherClient() *WeatherClient {
 	return &WeatherClient{
 		cache:  NewCacheService(),
@@ -89,8 +140,7 @@ func NewWeatherClient() *WeatherClient {
 	}
 }
 
-// getSystemLanguage attempts to detect the system's locale language code.
-// It parses common POSIX environment variables and defaults to "en" if missing.
+// getSystemLanguage detects system language locale code or defaults to "en".
 func getSystemLanguage() string {
 	envVars := []string{"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"}
 	for _, env := range envVars {
@@ -105,7 +155,7 @@ func getSystemLanguage() string {
 	return "en"
 }
 
-// GetWeather queries Open-Meteo endpoints or returns cached responses.
+// GetWeather queries Open-Meteo endpoints or retrieves cached entries.
 func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResponse, string, error) {
 	if forceRefresh {
 		wc.cache.Delete(city)

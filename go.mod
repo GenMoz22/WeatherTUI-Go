@@ -1,4 +1,4 @@
-module weather-cli
+module weather-tui
 
 go 1.26.4
 

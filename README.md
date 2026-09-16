@@ -99,13 +99,19 @@ Logs are formatted in **JSON** via Go's standard `log/slog` and written concurre
 ## Project Structure
 
 ```text
-WeatherTUI-Go/
-├── cache.go         # Cache engine (sync.RWMutex, 30m TTL)
-├── config.go        # JSON configuration persistence
-├── go.mod           # Go module dependency management
-├── go.sum           # Cryptographic checksums for dependencies
-├── LICENSE          # Project licensing information
-├── main.go          # Bubble Tea model definitions, View rendering, and app entry point
-├── README.md        # Project documentation
-└── weather.go       # Open-Meteo API client, JSON models, and HTTP request orchestration
+weather-tui/
+├── main.go               # Entry point: flag parsing, logger setup, and Bubbletea initialization
+├── go.mod
+├── go.sum
+├── internal/
+│   ├── config/           # User configuration management
+│   │   └── config.go
+│   ├── ui/               # Bubbletea user interface components and logic
+│   │   ├── helpers.go    # Conversion and formatting utilities (temperatures, UV, etc.)
+│   │   ├── model.go      # Bubbletea model structure and constants
+│   │   ├── styles.go     # Lipgloss styles and color palette definitions
+│   │   └── update.go     # Event and state management (Update)
+│   │   └── view.go       # Graphical rendering logic and help overlay (View)
+│   └── weather/          # HTTP API client and weather data models
+│       └── client.go
 ```
