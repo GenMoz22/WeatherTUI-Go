@@ -25,6 +25,7 @@ var (
 	green     = lipgloss.Color("#7bf1a8")
 	yellow    = lipgloss.Color("#ffee32")
 	blue      = lipgloss.Color("#00bbf9")
+	orange    = lipgloss.Color("#ff9f1c")
 	darkBg    = lipgloss.Color("#1a202c")
 
 	panelTitleStyle  = lipgloss.NewStyle().Foreground(cyan).Bold(true)
@@ -175,10 +176,30 @@ func celsiusToFahrenheit(c float64) float64 {
 	return (c * 9 / 5) + 32
 }
 
+// degreesToCompass converts wind direction degrees to an ASCII direction arrow and compass point label.
 func degreesToCompass(degrees float64) string {
+	arrows := []string{"↓", "↙", "←", "↖", "↑", "↗", "→", "↘"}
 	directions := []string{"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"}
-	index := int((degrees + 11.25) / 22.5)
-	return directions[index%16]
+
+	arrowIdx := int((degrees + 22.5) / 45.0) % 8
+	dirIdx := int((degrees + 11.25) / 22.5) % 16
+
+	return fmt.Sprintf("%s %s", arrows[arrowIdx], directions[dirIdx])
+}
+
+// getTemperatureStyle returns a Lipgloss style dynamically based on temperature in Celsius thresholds.
+func getTemperatureStyle(tempCelsius float64) lipgloss.Style {
+	baseStyle := lipgloss.NewStyle().Bold(true)
+	if tempCelsius < 0 {
+		return baseStyle.Foreground(blue)
+	} else if tempCelsius <= 15 {
+		return baseStyle.Foreground(cyan)
+	} else if tempCelsius <= 25 {
+		return baseStyle.Foreground(green)
+	} else if tempCelsius < 30 {
+		return baseStyle.Foreground(orange)
+	}
+	return baseStyle.Foreground(red)
 }
 
 func getUVIndexDesc(uv float64) string {
@@ -265,6 +286,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.termWidth = msg.Width
 			m.termHeight = msg.Height
 			return m, nil
+
+		case weatherMsg:
+			m.loading = false
+			m.hasData = true
+			m.cityName = msg.data
+			m.weather = msg.w
+			m.selectedRow = 0
+			m.addRecentLocation(msg.query)
+			m.textInput.SetValue("")
+			return m, nil
+
+		case errMsg:
+			m.loading = false
+			m.hasData = false
+			m.err = msg
+			return m, nil
+
+		case spinner.TickMsg:
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			if m.loading {
+				cmds = append(cmds, cmd)
+			}
 
 		case tea.KeyMsg:
 			// Toggle help overlay on '?' only when not typing inside search input panel or when overlay is open.
@@ -397,29 +441,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 			}
-
-								case weatherMsg:
-									m.loading = false
-									m.hasData = true
-									m.cityName = msg.data
-									m.weather = msg.w
-									m.selectedRow = 0
-									m.addRecentLocation(msg.query)
-									m.textInput.SetValue("")
-									return m, nil
-
-								case errMsg:
-									m.loading = false
-									m.hasData = false
-									m.err = msg
-									return m, nil
-
-								case spinner.TickMsg:
-									var cmd tea.Cmd
-									m.spinner, cmd = m.spinner.Update(msg)
-									if m.loading {
-										cmds = append(cmds, cmd)
-									}
 	}
 
 	if m.activePanel == searchPanel && !m.showHelp {
@@ -624,16 +645,20 @@ func (m model) View() string {
 				aqiDesc = lipgloss.NewStyle().Foreground(red).Render(fmt.Sprintf("%d (CRITICAL)", aqiVal))
 			}
 
-			tempVal := m.weather.Current.Temperature
+			rawCelsius := m.weather.Current.Temperature
+			tempVal := rawCelsius
 			unitStr := "°C"
 			if m.useFahrenheit {
-				tempVal = celsiusToFahrenheit(tempVal)
+				tempVal = celsiusToFahrenheit(rawCelsius)
 				unitStr = "°F"
 			}
 
+			tempStyle := getTemperatureStyle(rawCelsius)
+			renderedTemp := tempStyle.Render(fmt.Sprintf("%.1f %s", tempVal, unitStr))
+
 			uvDesc := getUVIndexDesc(m.weather.Current.UvIndex)
 			windDirCompass := degreesToCompass(m.weather.Current.WindDirection)
-			windDirStr := fmt.Sprintf("%s (%.0f°)", windDirCompass, m.weather.Current.WindDirection)
+			windStr := fmt.Sprintf("%.1f km/h %s (%.0f°)", m.weather.Current.WindSpeed, windDirCompass, m.weather.Current.WindDirection)
 
 			metricsContent := fmt.Sprintf(
 				"%s  %-12s %s\n"+
@@ -642,12 +667,10 @@ func (m model) View() string {
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
-				"%s  %-12s %s\n"+
 				"%s  %-12s %s",
-				 labelStyle.Render("[TEMP]"), "Temperature:", highlightStyle.Render(fmt.Sprintf("%.1f %s", tempVal, unitStr)),
+				 labelStyle.Render("[TEMP]"), "Temperature:", renderedTemp,
 						      labelStyle.Render("[HUMI]"), "Humidity:", valueStyle.Render(fmt.Sprintf("%d%%", m.weather.Current.Humidity)),
-						      labelStyle.Render("[WIND]"), "Wind Speed:", valueStyle.Render(fmt.Sprintf("%.1f km/h", m.weather.Current.WindSpeed)),
-						      labelStyle.Render("[WDIR]"), "Wind Dir:", valueStyle.Render(windDirStr),
+						      labelStyle.Render("[WIND]"), "Wind:", valueStyle.Render(windStr),
 						      labelStyle.Render("[UVIN]"), "UV Index:", uvDesc,
 						      labelStyle.Render("[SUNR]"), "Sun Rise:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunrise),
 						      labelStyle.Render("[SUNS]"), "Sun Set:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunset),
@@ -735,7 +758,13 @@ func (m model) View() string {
 							minTemp = celsiusToFahrenheit(minTemp)
 						}
 
-						row := fmt.Sprintf(" %-10s │  %-7.1f │  %-7.1f │ %s", day.Date, maxTemp, minTemp, renderedBar)
+						maxStyle := getTemperatureStyle(day.MaxTemp)
+						minStyle := getTemperatureStyle(day.MinTemp)
+
+						renderedMax := maxStyle.Render(fmt.Sprintf("%-7.1f", maxTemp))
+						renderedMin := minStyle.Render(fmt.Sprintf("%-7.1f", minTemp))
+
+						row := fmt.Sprintf(" %-10s │  %s │  %s │ %s", day.Date, renderedMax, renderedMin, renderedBar)
 
 						if m.activePanel == forecastPanel && i == m.selectedRow {
 							row = selectedRowStyle.Render(row)
