@@ -23,6 +23,7 @@ type DailyForecast struct {
 type WeatherData struct {
 	Temperature       float64
 	WindSpeed         float64
+	WindDirection     float64
 	UvIndex           float64
 	PrecipProbability int
 	Humidity          int
@@ -51,11 +52,12 @@ type geoAPIResponse struct {
 
 type weatherAPIResponse struct {
 	Current struct {
-		Temperature float64 `json:"temperature_2m"`
-		WindSpeed   float64 `json:"wind_speed_10m"`
-		UvIndex     float64 `json:"uv_index"`
-		Precip      float64 `json:"precipitation_probability"`
-		Humidity    float64 `json:"relative_humidity_2m"`
+		Temperature   float64 `json:"temperature_2m"`
+		WindSpeed     float64 `json:"wind_speed_10m"`
+		WindDirection float64 `json:"wind_direction_10m"`
+		UvIndex       float64 `json:"uv_index"`
+		Precip        float64 `json:"precipitation_probability"`
+		Humidity      float64 `json:"relative_humidity_2m"`
 	} `json:"current"`
 	Daily struct {
 		Time              []string  `json:"time"`
@@ -136,7 +138,7 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 
 	forecastURL := fmt.Sprintf(
 		"https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"+
-		"&current=temperature_2m,wind_speed_10m,uv_index,precipitation_probability,relative_humidity_2m"+
+		"&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m"+
 		"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14",
 		loc.Latitude, loc.Longitude,
 	)
@@ -179,6 +181,7 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 		currentData := WeatherData{
 			Temperature:       apiMeteo.Current.Temperature,
 			WindSpeed:         apiMeteo.Current.WindSpeed,
+			WindDirection:     apiMeteo.Current.WindDirection,
 			UvIndex:           apiMeteo.Current.UvIndex,
 			PrecipProbability: int(apiMeteo.Current.Precip),
 			Humidity:          int(apiMeteo.Current.Humidity),

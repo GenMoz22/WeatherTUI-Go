@@ -135,6 +135,25 @@ func celsiusToFahrenheit(c float64) float64 {
 	return (c * 9 / 5) + 32
 }
 
+func degreesToCompass(degrees float64) string {
+	directions := []string{"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"}
+	index := int((degrees + 11.25) / 22.5)
+	return directions[index%16]
+}
+
+func getUVIndexDesc(uv float64) string {
+	if uv <= 2 {
+		return lipgloss.NewStyle().Foreground(green).Render(fmt.Sprintf("%.1f (LOW)", uv))
+	} else if uv <= 5 {
+		return lipgloss.NewStyle().Foreground(yellow).Render(fmt.Sprintf("%.1f (MODERATE)", uv))
+	} else if uv <= 7 {
+		return lipgloss.NewStyle().Foreground(yellow).Bold(true).Render(fmt.Sprintf("%.1f (HIGH)", uv))
+	} else if uv <= 10 {
+		return lipgloss.NewStyle().Foreground(red).Render(fmt.Sprintf("%.1f (VERY HIGH)", uv))
+	}
+	return lipgloss.NewStyle().Foreground(red).Bold(true).Render(fmt.Sprintf("%.1f (EXTREME)", uv))
+}
+
 func (m model) fetchWeatherCmd(city string, forceRefresh bool) tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
@@ -366,8 +385,8 @@ func (m model) View() string {
 	}
 
 	availableHeight := m.termHeight - 4
-	if availableHeight < 14 {
-		availableHeight = 14
+	if availableHeight < 16 {
+		availableHeight = 16
 	}
 
 	leftWidth := int(float64(m.termWidth) * 0.35)
@@ -382,8 +401,8 @@ func (m model) View() string {
 	const searchBoxHeight = 5
 	historyBoxHeight := 7
 	currentBoxHeight := availableHeight - searchBoxHeight - historyBoxHeight
-	if currentBoxHeight < 7 {
-		currentBoxHeight = 7
+	if currentBoxHeight < 9 {
+		currentBoxHeight = 9
 		historyBoxHeight = availableHeight - searchBoxHeight - currentBoxHeight
 	}
 
@@ -509,8 +528,14 @@ func (m model) View() string {
 				cacheBadge = lipgloss.NewStyle().Foreground(yellow).Bold(true).Render(" [CACHE HIT]")
 			}
 
+			uvDesc := getUVIndexDesc(m.weather.Current.UvIndex)
+			windDirCompass := degreesToCompass(m.weather.Current.WindDirection)
+			windDirStr := fmt.Sprintf("%s (%.0f°)", windDirCompass, m.weather.Current.WindDirection)
+
 			metricsContent := fmt.Sprintf(
 				"%s  %-12s %s%s\n"+
+				"%s  %-12s %s\n"+
+				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
@@ -519,6 +544,8 @@ func (m model) View() string {
 				 labelStyle.Render("[TEMP]"), "Temperature:", highlightStyle.Render(fmt.Sprintf("%.1f %s", tempVal, unitStr)), cacheBadge,
 						      labelStyle.Render("[HUMI]"), "Humidity:", valueStyle.Render(fmt.Sprintf("%d%%", m.weather.Current.Humidity)),
 						      labelStyle.Render("[WIND]"), "Wind Speed:", valueStyle.Render(fmt.Sprintf("%.1f km/h", m.weather.Current.WindSpeed)),
+						      labelStyle.Render("[WDIR]"), "Wind Dir:", valueStyle.Render(windDirStr),
+						      labelStyle.Render("[UVIN]"), "UV Index:", uvDesc,
 						      labelStyle.Render("[SUNR]"), "Sun Rise:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunrise),
 						      labelStyle.Render("[SUNS]"), "Sun Set:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunset),
 						      labelStyle.Render("[AQI ]"), "Air Quality:", aqiDesc,
