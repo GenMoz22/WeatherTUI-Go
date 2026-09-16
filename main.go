@@ -32,6 +32,7 @@ var (
 	labelStyle       = lipgloss.NewStyle().Foreground(gray).Bold(true)
 	valueStyle       = lipgloss.NewStyle().Foreground(white)
 	highlightStyle   = lipgloss.NewStyle().Foreground(green).Bold(true)
+	favoriteStyle    = lipgloss.NewStyle().Foreground(yellow).Bold(true)
 
 	keyStyle  = lipgloss.NewStyle().Background(lightGray).Foreground(darkBg).Bold(true).Padding(0, 1)
 	descStyle = lipgloss.NewStyle().Foreground(lightGray).Padding(0, 1)
@@ -79,9 +80,11 @@ type model struct {
 	textInput          textinput.Model
 	spinner            spinner.Model
 	client             *WeatherClient
+	configMgr          *ConfigManager
 	weather            WeatherResponse
 	cityName           string
 	lastQuery          string
+	favoriteCity       string
 	recentLocations    []string
 	historySelectedRow int
 	err                error
@@ -93,6 +96,7 @@ type model struct {
 	termWidth          int
 	termHeight         int
 	showHelp           bool
+	initialCity        string
 }
 
 func initialModel() model {
@@ -106,23 +110,59 @@ func initialModel() model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(cyan)
 
+	cfgMgr, err := NewConfigManager()
+	if err != nil {
+		slog.Error("Failed initializing ConfigManager", "error", err)
+	}
+
+	useFahrenheit := false
+	favoriteCity := ""
+	recentLocations := make([]string, 0)
+
+	if cfgMgr != nil {
+		cfg, err := cfgMgr.Load()
+		if err == nil {
+			useFahrenheit = cfg.UseFahrenheit
+			favoriteCity = cfg.FavoriteCity
+			recentLocations = cfg.RecentLocations
+		}
+	}
+
+	// Resolve startup target: priority given to favorite city, falling back to recent location
+	initialCity := strings.TrimSpace(favoriteCity)
+	if initialCity == "" && len(recentLocations) > 0 {
+		initialCity = strings.TrimSpace(recentLocations[0])
+	}
+
 	return model{
 		textInput:          ti,
 		spinner:            s,
 		client:             NewWeatherClient(),
+		configMgr:          cfgMgr,
 		activePanel:        searchPanel,
-		useFahrenheit:      false,
+		useFahrenheit:      useFahrenheit,
+		favoriteCity:       favoriteCity,
+		recentLocations:    recentLocations,
 		selectedRow:        0,
 		historySelectedRow: 0,
-		recentLocations:    make([]string, 0),
 		termWidth:          100,
 		termHeight:         24,
 		showHelp:           false,
+		initialCity:        initialCity,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, m.spinner.Tick)
+	cmds := []tea.Cmd{textinput.Blink, m.spinner.Tick}
+
+	// Trigger initial weather fetch command automatically if a default city is configured
+	if m.initialCity != "" {
+		m.loading = true
+		m.lastQuery = m.initialCity
+		cmds = append(cmds, m.fetchWeatherCmd(m.initialCity, false))
+	}
+
+	return tea.Batch(cmds...)
 }
 
 type weatherMsg struct {
@@ -167,27 +207,54 @@ func (m model) fetchWeatherCmd(city string, forceRefresh bool) tea.Cmd {
 	)
 }
 
+func (m *model) saveConfig() {
+	if m.configMgr == nil {
+		return
+	}
+	cfg := Config{
+		UseFahrenheit:   m.useFahrenheit,
+		FavoriteCity:    m.favoriteCity,
+		RecentLocations: m.recentLocations,
+	}
+	if err := m.configMgr.Save(cfg); err != nil {
+		slog.Error("Failed persisting configuration", "error", err)
+	}
+}
+
 func (m *model) addRecentLocation(location string) {
-	cleanLoc := strings.TrimSpace(location)
+	m.recentLocations, m.favoriteCity = UpdateRecentAndFavorite(m.recentLocations, m.favoriteCity, location)
+	m.saveConfig()
+}
+
+func (m *model) toggleFavorite(targetCity string) {
+	cleanLoc := strings.TrimSpace(targetCity)
 	if cleanLoc == "" {
 		return
 	}
 
-	// Remove duplicate if it already exists to move it to the top
-	updated := make([]string, 0, len(m.recentLocations)+1)
-	for _, loc := range m.recentLocations {
-		if !strings.EqualFold(loc, cleanLoc) {
-			updated = append(updated, loc)
+	if strings.EqualFold(m.favoriteCity, cleanLoc) {
+		m.favoriteCity = ""
+	} else {
+		m.favoriteCity = cleanLoc
+		// Purge the favorited location from recent locations list to keep entries strictly unique
+		filtered := make([]string, 0, len(m.recentLocations))
+		for _, loc := range m.recentLocations {
+			if !strings.EqualFold(loc, cleanLoc) {
+				filtered = append(filtered, loc)
+			}
 		}
+		m.recentLocations = filtered
 	}
+	m.saveConfig()
+}
 
-	// Prepend newest search query
-	m.recentLocations = append([]string{cleanLoc}, updated...)
-
-	// Cap history to 10 entries max
-	if len(m.recentLocations) > 10 {
-		m.recentLocations = m.recentLocations[:10]
+func (m model) getHistoryItems() []string {
+	items := make([]string, 0, 4)
+	if m.favoriteCity != "" {
+		items = append(items, m.favoriteCity)
 	}
+	items = append(items, m.recentLocations...)
+	return items
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -257,29 +324,42 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, m.fetchWeatherCmd(city, false)
 					}
 
-					if m.activePanel == historyPanel && len(m.recentLocations) > 0 {
-						selectedCity := m.recentLocations[m.historySelectedRow]
-						m.loading = true
-						m.err = nil
-						m.lastQuery = selectedCity
-						return m, m.fetchWeatherCmd(selectedCity, false)
+					if m.activePanel == historyPanel {
+						historyItems := m.getHistoryItems()
+						if len(historyItems) > 0 && m.historySelectedRow < len(historyItems) {
+							selectedCity := historyItems[m.historySelectedRow]
+							m.loading = true
+							m.err = nil
+							m.lastQuery = selectedCity
+							return m, m.fetchWeatherCmd(selectedCity, false)
+						}
 					}
 
 				case tea.KeyUp, tea.KeyDown, tea.KeyRunes:
 					key := msg.String()
 
-					if m.activePanel == historyPanel && len(m.recentLocations) > 0 {
-						switch key {
-							case "k", "up":
-								if m.historySelectedRow > 0 {
-									m.historySelectedRow--
-								}
-								return m, nil
-							case "j", "down":
-								if m.historySelectedRow < len(m.recentLocations)-1 {
-									m.historySelectedRow++
-								}
-								return m, nil
+					if m.activePanel == historyPanel {
+						historyItems := m.getHistoryItems()
+						if len(historyItems) > 0 {
+							switch key {
+								case "k", "up":
+									if m.historySelectedRow > 0 {
+										m.historySelectedRow--
+									}
+									return m, nil
+								case "j", "down":
+									if m.historySelectedRow < len(historyItems)-1 {
+										m.historySelectedRow++
+									}
+									return m, nil
+								case "p", "P":
+									selectedCity := historyItems[m.historySelectedRow]
+									m.toggleFavorite(selectedCity)
+									if m.historySelectedRow >= len(m.getHistoryItems()) {
+										m.historySelectedRow = maxInt(0, len(m.getHistoryItems())-1)
+									}
+									return m, nil
+							}
 						}
 					}
 
@@ -296,11 +376,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 										m.selectedRow++
 									}
 									return m, nil
+								case "p", "P":
+									if m.lastQuery != "" {
+										m.toggleFavorite(m.lastQuery)
+									}
+									return m, nil
 							}
 						}
 
 						if key == "u" || key == "U" {
 							m.useFahrenheit = !m.useFahrenheit
+							m.saveConfig()
 							return m, nil
 						}
 
@@ -360,14 +446,16 @@ func (m model) renderHelpOverlay() string {
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Enter"), descStyle.Render("Dispatch location query")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("Text Input"), descStyle.Render("Type city or location name")))
 
-	sb.WriteString(helpSectionStyle.Render("RECENT LOCATIONS PANEL") + "\n")
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("j / k"), descStyle.Render("Navigate recent queries")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("Enter"), descStyle.Render("Load selected recent location")))
+	sb.WriteString(helpSectionStyle.Render("RECENT & FAVORITE LOCATIONS PANEL") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("j / k"), descStyle.Render("Navigate items")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Enter"), descStyle.Render("Load selected location")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("p"), descStyle.Render("Toggle favorite status")))
 
 	sb.WriteString(helpSectionStyle.Render("FORECAST PANEL") + "\n")
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("j / k"), descStyle.Render("Navigate 14-day daily records")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Up / Down"), descStyle.Render("Navigate 14-day daily records")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("u"), descStyle.Render("Toggle temperature unit (°C / °F)")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("p"), descStyle.Render("Toggle active city favorite status")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("r"), descStyle.Render("Force refresh data (bypass cache)")))
 
 	sb.WriteString(lipgloss.NewStyle().Foreground(gray).Italic(true).Render("Press ? or Esc to return to dashboard"))
@@ -399,7 +487,7 @@ func (m model) View() string {
 	}
 
 	const searchBoxHeight = 5
-	historyBoxHeight := 7
+	historyBoxHeight := 8
 	currentBoxHeight := availableHeight - searchBoxHeight - historyBoxHeight
 	if currentBoxHeight < 9 {
 		currentBoxHeight = 9
@@ -429,9 +517,9 @@ func (m model) View() string {
 		Render(searchContent)
 
 		// ------------------------------------------------------------------------
-		// 2. RECENT LOCATIONS PANEL
+		// 2. RECENT & FAVORITE LOCATIONS PANEL
 		// ------------------------------------------------------------------------
-		historyTitle := " RECENT LOCATIONS "
+		historyTitle := " RECENT & FAVORITES "
 		historyBoxStyleToUse := boxStyle
 		if m.activePanel == historyPanel {
 			historyBoxStyleToUse = activeBoxStyle
@@ -441,7 +529,8 @@ func (m model) View() string {
 		var historyContent strings.Builder
 		historyContent.WriteString(historyHeader + "\n\n")
 
-		if len(m.recentLocations) == 0 {
+		historyItems := m.getHistoryItems()
+		if len(historyItems) == 0 {
 			historyContent.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No recent lookups"))
 		} else {
 			maxVisibleRows := historyInnerHeight - 2
@@ -454,19 +543,30 @@ func (m model) View() string {
 				startIdx = m.historySelectedRow - maxVisibleRows + 1
 			}
 			endIdx := startIdx + maxVisibleRows
-			if endIdx > len(m.recentLocations) {
-				endIdx = len(m.recentLocations)
+			if endIdx > len(historyItems) {
+				endIdx = len(historyItems)
 			}
 
 			for i := startIdx; i < endIdx; i++ {
-				loc := m.recentLocations[i]
-				rowStr := fmt.Sprintf(" %-30s", loc)
+				loc := historyItems[i]
+				isFav := strings.EqualFold(loc, m.favoriteCity)
+
+				displayStr := loc
+				if isFav {
+					displayStr = "★ " + loc
+				} else {
+					displayStr = "  " + loc
+				}
+
+				rowStr := fmt.Sprintf(" %-30s", displayStr)
 				if len(rowStr) > leftWidth-6 {
 					rowStr = rowStr[:leftWidth-6]
 				}
 
 				if m.activePanel == historyPanel && i == m.historySelectedRow {
 					historyContent.WriteString(selectedRowStyle.Render(rowStr) + "\n")
+				} else if isFav {
+					historyContent.WriteString(favoriteStyle.Render(rowStr) + "\n")
 				} else {
 					historyContent.WriteString(valueStyle.Render(rowStr) + "\n")
 				}
@@ -491,7 +591,11 @@ func (m model) View() string {
 			if m.weather.FromCache {
 				cacheBadge = lipgloss.NewStyle().Foreground(yellow).Bold(true).Render(" [CACHE HIT]")
 			}
-			currentHeaderTitle = fmt.Sprintf(" MONITOR: %s%s ", m.cityName, cacheBadge)
+			favBadge := ""
+			if strings.EqualFold(m.lastQuery, m.favoriteCity) {
+				favBadge = favoriteStyle.Render(" ★")
+			}
+			currentHeaderTitle = fmt.Sprintf(" MONITOR: %s%s%s ", m.cityName, favBadge, cacheBadge)
 		}
 		currentHeader := panelTitleStyle.Render(currentHeaderTitle)
 
@@ -687,12 +791,14 @@ func (m model) View() string {
 				navKeys := keyStyle.Render("Tab") + descStyle.Render("Switch View")
 
 				if m.activePanel == historyPanel {
-					navKeys += keyStyle.Render("j/k") + descStyle.Render("Navigate History") +
-					keyStyle.Render("Enter") + descStyle.Render("Load Location")
+					navKeys += keyStyle.Render("j/k") + descStyle.Render("Navigate") +
+					keyStyle.Render("p") + descStyle.Render("Favorite") +
+					keyStyle.Render("Enter") + descStyle.Render("Load")
 				} else if m.activePanel == forecastPanel {
 					navKeys += keyStyle.Render("u") + descStyle.Render("Toggle °C/°F") +
-					keyStyle.Render("r") + descStyle.Render("Refresh Cache") +
-					keyStyle.Render("j/k") + descStyle.Render("Navigate Rows")
+					keyStyle.Render("p") + descStyle.Render("Favorite") +
+					keyStyle.Render("r") + descStyle.Render("Refresh") +
+					keyStyle.Render("j/k") + descStyle.Render("Rows")
 				}
 
 				var statusElements []string
