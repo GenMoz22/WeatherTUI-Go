@@ -487,7 +487,11 @@ func (m model) View() string {
 
 		currentHeaderTitle := " MONITOR: ATMOSPHERE "
 		if m.hasData && m.cityName != "" {
-			currentHeaderTitle = fmt.Sprintf(" MONITOR: %s ", m.cityName)
+			cacheBadge := ""
+			if m.weather.FromCache {
+				cacheBadge = lipgloss.NewStyle().Foreground(yellow).Bold(true).Render(" [CACHE HIT]")
+			}
+			currentHeaderTitle = fmt.Sprintf(" MONITOR: %s%s ", m.cityName, cacheBadge)
 		}
 		currentHeader := panelTitleStyle.Render(currentHeaderTitle)
 
@@ -523,17 +527,12 @@ func (m model) View() string {
 				unitStr = "°F"
 			}
 
-			cacheBadge := ""
-			if m.weather.FromCache {
-				cacheBadge = lipgloss.NewStyle().Foreground(yellow).Bold(true).Render(" [CACHE HIT]")
-			}
-
 			uvDesc := getUVIndexDesc(m.weather.Current.UvIndex)
 			windDirCompass := degreesToCompass(m.weather.Current.WindDirection)
 			windDirStr := fmt.Sprintf("%s (%.0f°)", windDirCompass, m.weather.Current.WindDirection)
 
 			metricsContent := fmt.Sprintf(
-				"%s  %-12s %s%s\n"+
+				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
@@ -541,7 +540,7 @@ func (m model) View() string {
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s",
-				 labelStyle.Render("[TEMP]"), "Temperature:", highlightStyle.Render(fmt.Sprintf("%.1f %s", tempVal, unitStr)), cacheBadge,
+				 labelStyle.Render("[TEMP]"), "Temperature:", highlightStyle.Render(fmt.Sprintf("%.1f %s", tempVal, unitStr)),
 						      labelStyle.Render("[HUMI]"), "Humidity:", valueStyle.Render(fmt.Sprintf("%d%%", m.weather.Current.Humidity)),
 						      labelStyle.Render("[WIND]"), "Wind Speed:", valueStyle.Render(fmt.Sprintf("%.1f km/h", m.weather.Current.WindSpeed)),
 						      labelStyle.Render("[WDIR]"), "Wind Dir:", valueStyle.Render(windDirStr),
