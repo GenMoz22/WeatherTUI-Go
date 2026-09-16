@@ -9,62 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"weather-tui/internal/ui"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/natefinch/lumberjack"
-)
-
-var (
-	cyan      = lipgloss.Color("#00f5d4")
-	gray      = lipgloss.Color("#4a5568")
-	lightGray = lipgloss.Color("#a0aec0")
-	white     = lipgloss.Color("#ffffff")
-	red       = lipgloss.Color("#ff0054")
-	green     = lipgloss.Color("#7bf1a8")
-	yellow    = lipgloss.Color("#ffee32")
-	blue      = lipgloss.Color("#00bbf9")
-	orange    = lipgloss.Color("#ff9f1c")
-	darkBg    = lipgloss.Color("#1a202c")
-
-	panelTitleStyle  = lipgloss.NewStyle().Foreground(cyan).Bold(true)
-	activeTitleStyle = lipgloss.NewStyle().Foreground(cyan).Bold(true).Underline(true)
-	labelStyle       = lipgloss.NewStyle().Foreground(gray).Bold(true)
-	valueStyle       = lipgloss.NewStyle().Foreground(white)
-	highlightStyle   = lipgloss.NewStyle().Foreground(green).Bold(true)
-	favoriteStyle    = lipgloss.NewStyle().Foreground(yellow).Bold(true)
-
-	keyStyle  = lipgloss.NewStyle().Background(lightGray).Foreground(darkBg).Bold(true).Padding(0, 1)
-	descStyle = lipgloss.NewStyle().Foreground(lightGray).Padding(0, 1)
-
-	boxStyle = lipgloss.NewStyle().
-	Border(lipgloss.NormalBorder()).
-	BorderForeground(gray).
-	Padding(0, 1)
-
-	activeBoxStyle = boxStyle.Copy().
-	BorderForeground(cyan)
-
-	errorBoxStyle = boxStyle.Copy().
-	BorderForeground(red)
-
-	selectedRowStyle = lipgloss.NewStyle().Background(lipgloss.Color("#2d3748")).Foreground(white).Bold(true)
-
-	// Help overlay modal styles
-	helpOverlayStyle = lipgloss.NewStyle().
-	Border(lipgloss.RoundedBorder()).
-	BorderForeground(cyan).
-	Background(darkBg).
-	Padding(1, 2)
-	helpTitleStyle   = lipgloss.NewStyle().Foreground(cyan).Bold(true)
-	helpSectionStyle = lipgloss.NewStyle().Foreground(yellow).Bold(true)
-
-	// Fallback style for low-resolution screens
-	smallScreenStyle = lipgloss.NewStyle().
-	Foreground(yellow).
-	Bold(true).
-	Align(lipgloss.Center, lipgloss.Center)
 )
 
 type activePanel int
@@ -109,7 +60,7 @@ func initialModel() model {
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(cyan)
+	s.Style = lipgloss.NewStyle().Foreground(ui.Cyan)
 
 	cfgMgr, err := NewConfigManager()
 	if err != nil {
@@ -129,7 +80,6 @@ func initialModel() model {
 		}
 	}
 
-	// Resolve startup target: priority given to favorite city, falling back to recent location
 	initialCity := strings.TrimSpace(favoriteCity)
 	if initialCity == "" && len(recentLocations) > 0 {
 		initialCity = strings.TrimSpace(recentLocations[0])
@@ -156,7 +106,6 @@ func initialModel() model {
 func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{textinput.Blink, m.spinner.Tick}
 
-	// Trigger initial weather fetch command automatically if a default city is configured
 	if m.initialCity != "" {
 		m.loading = true
 		m.lastQuery = m.initialCity
@@ -170,75 +119,6 @@ type weatherMsg struct {
 	data  string
 	query string
 	w     WeatherResponse
-}
-
-func celsiusToFahrenheit(c float64) float64 {
-	return (c * 9 / 5) + 32
-}
-
-// degreesToCompass converts wind direction degrees to an ASCII direction arrow and compass point label.
-func degreesToCompass(degrees float64) string {
-	arrows := []string{"↓", "↙", "←", "↖", "↑", "↗", "→", "↘"}
-	directions := []string{"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"}
-
-	arrowIdx := int((degrees + 22.5) / 45.0) % 8
-	dirIdx := int((degrees + 11.25) / 22.5) % 16
-
-	return fmt.Sprintf("%s %s", arrows[arrowIdx], directions[dirIdx])
-}
-
-// getTemperatureStyle returns a Lipgloss style dynamically based on temperature in Celsius thresholds.
-func getTemperatureStyle(tempCelsius float64) lipgloss.Style {
-	baseStyle := lipgloss.NewStyle().Bold(true)
-	if tempCelsius < 0 {
-		return baseStyle.Foreground(blue)
-	} else if tempCelsius <= 15 {
-		return baseStyle.Foreground(cyan)
-	} else if tempCelsius <= 25 {
-		return baseStyle.Foreground(green)
-	} else if tempCelsius < 30 {
-		return baseStyle.Foreground(orange)
-	}
-	return baseStyle.Foreground(red)
-}
-
-// getHumidityStyle returns a Lipgloss style dynamically based on relative humidity percentage.
-func getHumidityStyle(humidity int) lipgloss.Style {
-	baseStyle := lipgloss.NewStyle().Bold(true)
-	if humidity <= 30 {
-		return baseStyle.Foreground(green)
-	} else if humidity <= 50 {
-		return baseStyle.Foreground(yellow)
-	} else if humidity <= 75 {
-		return baseStyle.Foreground(orange)
-	}
-	return baseStyle.Foreground(red)
-}
-
-// getWindSpeedStyle returns a Lipgloss style dynamically based on wind speed in km/h.
-func getWindSpeedStyle(speedKmH float64) lipgloss.Style {
-	baseStyle := lipgloss.NewStyle().Bold(true)
-	if speedKmH <= 15.0 {
-		return baseStyle.Foreground(green)
-	} else if speedKmH <= 30.0 {
-		return baseStyle.Foreground(yellow)
-	} else if speedKmH <= 50.0 {
-		return baseStyle.Foreground(orange)
-	}
-	return baseStyle.Foreground(red)
-}
-
-func getUVIndexDesc(uv float64) string {
-	if uv <= 2 {
-		return lipgloss.NewStyle().Foreground(green).Render(fmt.Sprintf("%.1f (LOW)", uv))
-	} else if uv <= 5 {
-		return lipgloss.NewStyle().Foreground(yellow).Render(fmt.Sprintf("%.1f (MODERATE)", uv))
-	} else if uv <= 7 {
-		return lipgloss.NewStyle().Foreground(yellow).Bold(true).Render(fmt.Sprintf("%.1f (HIGH)", uv))
-	} else if uv <= 10 {
-		return lipgloss.NewStyle().Foreground(red).Render(fmt.Sprintf("%.1f (VERY HIGH)", uv))
-	}
-	return lipgloss.NewStyle().Foreground(red).Bold(true).Render(fmt.Sprintf("%.1f (EXTREME)", uv))
 }
 
 func (m model) fetchWeatherCmd(city string, forceRefresh bool) tea.Cmd {
@@ -283,7 +163,6 @@ func (m *model) toggleFavorite(targetCity string) {
 		m.favoriteCity = ""
 	} else {
 		m.favoriteCity = cleanLoc
-		// Purge the favorited location from recent locations list to keep entries strictly unique
 		filtered := make([]string, 0, len(m.recentLocations))
 		for _, loc := range m.recentLocations {
 			if !strings.EqualFold(loc, cleanLoc) {
@@ -337,13 +216,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyMsg:
-			// Toggle help overlay on '?' only when not typing inside search input panel or when overlay is open.
 			if msg.String() == "?" && (m.activePanel != searchPanel || m.showHelp) {
 				m.showHelp = !m.showHelp
 				return m, nil
 			}
 
-			// When help overlay is active, Esc or 'q' closes the overlay modal.
 			if m.showHelp {
 				switch msg.Type {
 					case tea.KeyEsc, tea.KeyCtrlC:
@@ -426,7 +303,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									selectedCity := historyItems[m.historySelectedRow]
 									m.toggleFavorite(selectedCity)
 									if m.historySelectedRow >= len(m.getHistoryItems()) {
-										m.historySelectedRow = maxInt(0, len(m.getHistoryItems())-1)
+										m.historySelectedRow = ui.MaxInt(0, len(m.getHistoryItems())-1)
 									}
 									return m, nil
 							}
@@ -481,39 +358,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) renderHelpOverlay() string {
 	var sb strings.Builder
 
-	sb.WriteString(helpTitleStyle.Render("KEYBINDINGS & SYSTEM HELP") + "\n\n")
+	sb.WriteString(ui.HelpTitleStyle.Render("KEYBINDINGS & SYSTEM HELP") + "\n\n")
 
-	sb.WriteString(helpSectionStyle.Render("GLOBAL CONTROLS") + "\n")
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Tab"), descStyle.Render("Cycle focus between panels")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("?"), descStyle.Render("Toggle this contextual help overlay")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Ctrl+C"), descStyle.Render("Force terminate application")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("Esc"), descStyle.Render("Unfocus search / Exit application")))
+	sb.WriteString(ui.HelpSectionStyle.Render("GLOBAL CONTROLS") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("Tab"), ui.DescStyle.Render("Cycle focus between panels")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("?"), ui.DescStyle.Render("Toggle this contextual help overlay")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("Ctrl+C"), ui.DescStyle.Render("Force terminate application")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", ui.KeyStyle.Render("Esc"), ui.DescStyle.Render("Unfocus search / Exit application")))
 
-	sb.WriteString(helpSectionStyle.Render("SEARCH PANEL") + "\n")
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Enter"), descStyle.Render("Dispatch location query")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("Text Input"), descStyle.Render("Type city or location name")))
+	sb.WriteString(ui.HelpSectionStyle.Render("SEARCH PANEL") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("Enter"), ui.DescStyle.Render("Dispatch location query")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", ui.KeyStyle.Render("Text Input"), ui.DescStyle.Render("Type city or location name")))
 
-	sb.WriteString(helpSectionStyle.Render("RECENT & FAVORITE LOCATIONS PANEL") + "\n")
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("j / k"), descStyle.Render("Navigate items")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Enter"), descStyle.Render("Load selected location")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("p"), descStyle.Render("Toggle favorite status")))
+	sb.WriteString(ui.HelpSectionStyle.Render("RECENT & FAVORITE LOCATIONS PANEL") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("j / k"), ui.DescStyle.Render("Navigate items")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("Enter"), ui.DescStyle.Render("Load selected location")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", ui.KeyStyle.Render("p"), ui.DescStyle.Render("Toggle favorite status")))
 
-	sb.WriteString(helpSectionStyle.Render("FORECAST PANEL") + "\n")
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("j / k"), descStyle.Render("Navigate 14-day daily records")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Up / Down"), descStyle.Render("Navigate 14-day daily records")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("u"), descStyle.Render("Toggle temperature unit (°C / °F)")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("p"), descStyle.Render("Toggle active city favorite status")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("r"), descStyle.Render("Force refresh data (bypass cache)")))
+	sb.WriteString(ui.HelpSectionStyle.Render("FORECAST PANEL") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("j / k"), ui.DescStyle.Render("Navigate 14-day daily records")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("Up / Down"), ui.DescStyle.Render("Navigate 14-day daily records")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("u"), ui.DescStyle.Render("Toggle temperature unit (°C / °F)")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", ui.KeyStyle.Render("p"), ui.DescStyle.Render("Toggle active city favorite status")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", ui.KeyStyle.Render("r"), ui.DescStyle.Render("Force refresh data (bypass cache)")))
 
-	sb.WriteString(lipgloss.NewStyle().Foreground(gray).Italic(true).Render("Press ? or Esc to return to dashboard"))
+	sb.WriteString(lipgloss.NewStyle().Foreground(ui.Gray).Italic(true).Render("Press ? or Esc to return to dashboard"))
 
-	return helpOverlayStyle.Render(sb.String())
+	return ui.HelpOverlayStyle.Render(sb.String())
 }
 
 func (m model) View() string {
-	// Defensive screen resolution guard against vertical/horizontal clipping
 	if m.termWidth < 80 || m.termHeight < 20 {
-		return smallScreenStyle.
+		return ui.SmallScreenStyle.
 		Width(m.termWidth).
 		Height(m.termHeight).
 		Render("Terminal screen too small. Please resize.")
@@ -546,16 +422,14 @@ func (m model) View() string {
 	currentInnerHeight := currentBoxHeight - 2
 	forecastInnerHeight := availableHeight - 2
 
-		// ------------------------------------------------------------------------
 		// 1. SEARCH PANEL
-		// ------------------------------------------------------------------------
 		searchTitle := " COMPONENT: SEARCH ENGINE "
-		searchBoxStyleToUse := boxStyle
+		searchBoxStyleToUse := ui.BoxStyle
 		if m.activePanel == searchPanel {
-			searchBoxStyleToUse = activeBoxStyle
+			searchBoxStyleToUse = ui.ActiveBoxStyle
 		}
 
-		searchContent := fmt.Sprintf("%s\n\n%s", panelTitleStyle.Render(searchTitle), m.textInput.View())
+		searchContent := fmt.Sprintf("%s\n\n%s", ui.PanelTitleStyle.Render(searchTitle), m.textInput.View())
 		searchBox := searchBoxStyleToUse.
 		Width(leftWidth - 2).
 		Height(searchInnerHeight).
@@ -563,22 +437,20 @@ func (m model) View() string {
 		MaxHeight(searchInnerHeight + 2).
 		Render(searchContent)
 
-		// ------------------------------------------------------------------------
 		// 2. RECENT & FAVORITE LOCATIONS PANEL
-		// ------------------------------------------------------------------------
 		historyTitle := " RECENT & FAVORITES "
-		historyBoxStyleToUse := boxStyle
+		historyBoxStyleToUse := ui.BoxStyle
 		if m.activePanel == historyPanel {
-			historyBoxStyleToUse = activeBoxStyle
+			historyBoxStyleToUse = ui.ActiveBoxStyle
 		}
 
-		historyHeader := panelTitleStyle.Render(historyTitle)
+		historyHeader := ui.PanelTitleStyle.Render(historyTitle)
 		var historyContent strings.Builder
 		historyContent.WriteString(historyHeader + "\n\n")
 
 		historyItems := m.getHistoryItems()
 		if len(historyItems) == 0 {
-			historyContent.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No recent lookups"))
+			historyContent.WriteString(lipgloss.NewStyle().Foreground(ui.Gray).Render("No recent lookups"))
 		} else {
 			maxVisibleRows := historyInnerHeight - 2
 			if maxVisibleRows < 1 {
@@ -611,11 +483,11 @@ func (m model) View() string {
 				}
 
 				if m.activePanel == historyPanel && i == m.historySelectedRow {
-					historyContent.WriteString(selectedRowStyle.Render(rowStr) + "\n")
+					historyContent.WriteString(ui.SelectedRowStyle.Render(rowStr) + "\n")
 				} else if isFav {
-					historyContent.WriteString(favoriteStyle.Render(rowStr) + "\n")
+					historyContent.WriteString(ui.FavoriteStyle.Render(rowStr) + "\n")
 				} else {
-					historyContent.WriteString(valueStyle.Render(rowStr) + "\n")
+					historyContent.WriteString(ui.ValueStyle.Render(rowStr) + "\n")
 				}
 			}
 		}
@@ -627,28 +499,26 @@ func (m model) View() string {
 		MaxHeight(historyInnerHeight + 2).
 		Render(historyContent.String())
 
-		// ------------------------------------------------------------------------
 		// 3. ATMOSPHERE MONITOR PANEL
-		// ------------------------------------------------------------------------
 		var currentBox string
 
 		currentHeaderTitle := " MONITOR: ATMOSPHERE "
 		if m.hasData && m.cityName != "" {
 			cacheBadge := ""
 			if m.weather.FromCache {
-				cacheBadge = lipgloss.NewStyle().Foreground(yellow).Bold(true).Render(" [CACHE HIT]")
+				cacheBadge = lipgloss.NewStyle().Foreground(ui.Yellow).Bold(true).Render(" [CACHE HIT]")
 			}
 			favBadge := ""
 			if strings.EqualFold(m.lastQuery, m.favoriteCity) {
-				favBadge = favoriteStyle.Render(" ★")
+				favBadge = ui.FavoriteStyle.Render(" ★")
 			}
 			currentHeaderTitle = fmt.Sprintf(" MONITOR: %s%s%s ", m.cityName, favBadge, cacheBadge)
 		}
-		currentHeader := panelTitleStyle.Render(currentHeaderTitle)
+		currentHeader := ui.PanelTitleStyle.Render(currentHeaderTitle)
 
-		currentStyle := boxStyle
+		currentStyle := ui.BoxStyle
 		if m.err != nil {
-			currentStyle = errorBoxStyle
+			currentStyle = ui.ErrorBoxStyle
 		}
 
 		if m.loading {
@@ -664,33 +534,33 @@ func (m model) View() string {
 			aqiVal := m.weather.Current.AirQualityIndex
 			var aqiDesc string
 			if aqiVal <= 20 {
-				aqiDesc = lipgloss.NewStyle().Foreground(green).Render(fmt.Sprintf("%d (EXCELLENT)", aqiVal))
+				aqiDesc = lipgloss.NewStyle().Foreground(ui.Green).Render(fmt.Sprintf("%d (EXCELLENT)", aqiVal))
 			} else if aqiVal <= 40 {
-				aqiDesc = lipgloss.NewStyle().Foreground(yellow).Render(fmt.Sprintf("%d (POOR)", aqiVal))
+				aqiDesc = lipgloss.NewStyle().Foreground(ui.Yellow).Render(fmt.Sprintf("%d (POOR)", aqiVal))
 			} else {
-				aqiDesc = lipgloss.NewStyle().Foreground(red).Render(fmt.Sprintf("%d (CRITICAL)", aqiVal))
+				aqiDesc = lipgloss.NewStyle().Foreground(ui.Red).Render(fmt.Sprintf("%d (CRITICAL)", aqiVal))
 			}
 
 			rawCelsius := m.weather.Current.Temperature
 			tempVal := rawCelsius
 			unitStr := "°C"
 			if m.useFahrenheit {
-				tempVal = celsiusToFahrenheit(rawCelsius)
+				tempVal = ui.CelsiusToFahrenheit(rawCelsius)
 				unitStr = "°F"
 			}
 
-			tempStyle := getTemperatureStyle(rawCelsius)
+			tempStyle := ui.GetTemperatureStyle(rawCelsius)
 			renderedTemp := tempStyle.Render(fmt.Sprintf("%.1f %s", tempVal, unitStr))
 
-			humidityStyle := getHumidityStyle(m.weather.Current.Humidity)
+			humidityStyle := ui.GetHumidityStyle(m.weather.Current.Humidity)
 			renderedHumidity := humidityStyle.Render(fmt.Sprintf("%d%%", m.weather.Current.Humidity))
 
-			windStyle := getWindSpeedStyle(m.weather.Current.WindSpeed)
-			windDirCompass := degreesToCompass(m.weather.Current.WindDirection)
+			windStyle := ui.GetWindSpeedStyle(m.weather.Current.WindSpeed)
+			windDirCompass := ui.DegreesToCompass(m.weather.Current.WindDirection)
 			windStr := fmt.Sprintf("%.1f km/h %s (%.0f°)", m.weather.Current.WindSpeed, windDirCompass, m.weather.Current.WindDirection)
 			renderedWind := windStyle.Render(windStr)
 
-			uvDesc := getUVIndexDesc(m.weather.Current.UvIndex)
+			uvDesc := ui.GetUVIndexDesc(m.weather.Current.UvIndex)
 
 			metricsContent := fmt.Sprintf(
 				"%s  %-12s %s\n"+
@@ -700,13 +570,13 @@ func (m model) View() string {
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s",
-				 labelStyle.Render("[TEMP]"), "Temperature:", renderedTemp,
-						      labelStyle.Render("[HUMI]"), "Humidity:", renderedHumidity,
-						      labelStyle.Render("[WIND]"), "Wind:", renderedWind,
-						      labelStyle.Render("[UVIN]"), "UV Index:", uvDesc,
-						      labelStyle.Render("[SUNR]"), "Sun Rise:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunrise),
-						      labelStyle.Render("[SUNS]"), "Sun Set:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunset),
-						      labelStyle.Render("[AQI ]"), "Air Quality:", aqiDesc,
+				 ui.LabelStyle.Render("[TEMP]"), "Temperature:", renderedTemp,
+						      ui.LabelStyle.Render("[HUMI]"), "Humidity:", renderedHumidity,
+						      ui.LabelStyle.Render("[WIND]"), "Wind:", renderedWind,
+						      ui.LabelStyle.Render("[UVIN]"), "UV Index:", uvDesc,
+						      ui.LabelStyle.Render("[SUNR]"), "Sun Rise:", lipgloss.NewStyle().Foreground(ui.Blue).Render(m.weather.Current.Sunrise),
+						      ui.LabelStyle.Render("[SUNS]"), "Sun Set:", lipgloss.NewStyle().Foreground(ui.Blue).Render(m.weather.Current.Sunset),
+						      ui.LabelStyle.Render("[AQI ]"), "Air Quality:", aqiDesc,
 			)
 
 			fullCurrentView := currentHeader + "\n\n" + lipgloss.PlaceVertical(currentInnerHeight-3, lipgloss.Top, metricsContent)
@@ -719,7 +589,7 @@ func (m model) View() string {
 		} else {
 			placeholderText := "STATUS: SYSTEM IDLE\n\nAwaiting dispatcher query...\nInsert location name above."
 			if m.err != nil {
-				placeholderText = lipgloss.NewStyle().Foreground(red).Render(fmt.Sprintf("[ERR] SYSTEM EXCEPTION:\n%v", m.err))
+				placeholderText = lipgloss.NewStyle().Foreground(ui.Red).Render(fmt.Sprintf("[ERR] SYSTEM EXCEPTION:\n%v", m.err))
 			}
 			currentBox = currentStyle.
 			Width(leftWidth - 2).
@@ -731,15 +601,13 @@ func (m model) View() string {
 
 		leftColumn := lipgloss.JoinVertical(lipgloss.Left, searchBox, historyBox, currentBox)
 
-		// ------------------------------------------------------------------------
 		// 4. 14-DAY FORECAST PANEL
-		// ------------------------------------------------------------------------
 		var forecastBox string
-		forecastHeader := panelTitleStyle.Render(" METRIC: 14-DAY CORE FORECAST ") + "\n\n"
+		forecastHeader := ui.PanelTitleStyle.Render(" METRIC: 14-DAY CORE FORECAST ") + "\n\n"
 
-			forecastBoxStyleToUse := boxStyle
+			forecastBoxStyleToUse := ui.BoxStyle
 				if m.activePanel == forecastPanel {
-					forecastBoxStyleToUse = activeBoxStyle
+					forecastBoxStyleToUse = ui.ActiveBoxStyle
 				}
 
 				const fixedTableColumnsWidth = 36
@@ -748,13 +616,13 @@ func (m model) View() string {
 					dynamicBarLength = 10
 				}
 
-				graphHeaderPadding := strings.Repeat(" ", maxInt(0, dynamicBarLength-15))
+				graphHeaderPadding := strings.Repeat(" ", ui.MaxInt(0, dynamicBarLength-15))
 				unitHeader := "MAX (°C)│ MIN (°C)"
 				if m.useFahrenheit {
 					unitHeader = "MAX (°F)│ MIN (°F)"
 				}
-				tableHeader := lipgloss.NewStyle().Foreground(lightGray).Render(fmt.Sprintf(" DATE       │ %s │ PRECIPITATION GRAPH%s", unitHeader, graphHeaderPadding)) + "\n"
-				tableDivider := lipgloss.NewStyle().Foreground(gray).Render(strings.Repeat("─", maxInt(10, rightWidth-4))) + "\n"
+				tableHeader := lipgloss.NewStyle().Foreground(ui.LightGray).Render(fmt.Sprintf(" DATE       │ %s │ PRECIPITATION GRAPH%s", unitHeader, graphHeaderPadding)) + "\n"
+				tableDivider := lipgloss.NewStyle().Foreground(ui.Gray).Render(strings.Repeat("─", ui.MaxInt(10, rightWidth-4))) + "\n"
 
 				var tableRows strings.Builder
 				if m.hasData {
@@ -774,11 +642,11 @@ func (m model) View() string {
 
 						var barStyle lipgloss.Style
 						if day.PrecipProbability > 70 {
-							barStyle = lipgloss.NewStyle().Foreground(red)
+							barStyle = lipgloss.NewStyle().Foreground(ui.Red)
 						} else if day.PrecipProbability > 30 {
-							barStyle = lipgloss.NewStyle().Foreground(yellow)
+							barStyle = lipgloss.NewStyle().Foreground(ui.Yellow)
 						} else {
-							barStyle = lipgloss.NewStyle().Foreground(gray)
+							barStyle = lipgloss.NewStyle().Foreground(ui.Gray)
 						}
 
 						renderedBar := barStyle.Render(fmt.Sprintf("%s %3d%%", barStr.String(), day.PrecipProbability))
@@ -786,12 +654,12 @@ func (m model) View() string {
 						maxTemp := day.MaxTemp
 						minTemp := day.MinTemp
 						if m.useFahrenheit {
-							maxTemp = celsiusToFahrenheit(maxTemp)
-							minTemp = celsiusToFahrenheit(minTemp)
+							maxTemp = ui.CelsiusToFahrenheit(maxTemp)
+							minTemp = ui.CelsiusToFahrenheit(minTemp)
 						}
 
-						maxStyle := getTemperatureStyle(day.MaxTemp)
-						minStyle := getTemperatureStyle(day.MinTemp)
+						maxStyle := ui.GetTemperatureStyle(day.MaxTemp)
+						minStyle := ui.GetTemperatureStyle(day.MinTemp)
 
 						renderedMax := maxStyle.Render(fmt.Sprintf("%-7.1f", maxTemp))
 						renderedMin := minStyle.Render(fmt.Sprintf("%-7.1f", minTemp))
@@ -799,7 +667,7 @@ func (m model) View() string {
 						row := fmt.Sprintf(" %-10s │  %s │  %s │ %s", day.Date, renderedMax, renderedMin, renderedBar)
 
 						if m.activePanel == forecastPanel && i == m.selectedRow {
-							row = selectedRowStyle.Render(row)
+							row = ui.SelectedRowStyle.Render(row)
 						}
 
 						tableRows.WriteString(row + "\n")
@@ -833,7 +701,6 @@ func (m model) View() string {
 
 				mainDashboard := lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, forecastBox)
 
-				// Overlay modal layout when help toggle is active
 				if m.showHelp {
 					helpModal := m.renderHelpOverlay()
 					mainDashboard = lipgloss.Place(
@@ -846,43 +713,40 @@ func (m model) View() string {
 					)
 				}
 
-				// ------------------------------------------------------------------------
 				// 5. FOOTER STATUS BAR
-				// ------------------------------------------------------------------------
-				navKeys := keyStyle.Render("Tab") + descStyle.Render("Switch View")
+				navKeys := ui.KeyStyle.Render("Tab") + ui.DescStyle.Render("Switch View")
 
 				if m.activePanel == historyPanel {
-					navKeys += keyStyle.Render("j/k") + descStyle.Render("Navigate") +
-					keyStyle.Render("p") + descStyle.Render("Favorite") +
-					keyStyle.Render("Enter") + descStyle.Render("Load")
+					navKeys += ui.KeyStyle.Render("j/k") + ui.DescStyle.Render("Navigate") +
+					ui.KeyStyle.Render("p") + ui.DescStyle.Render("Favorite") +
+					ui.KeyStyle.Render("Enter") + ui.DescStyle.Render("Load")
 				} else if m.activePanel == forecastPanel {
-					navKeys += keyStyle.Render("u") + descStyle.Render("Toggle °C/°F") +
-					keyStyle.Render("p") + descStyle.Render("Favorite") +
-					keyStyle.Render("r") + descStyle.Render("Refresh") +
-					keyStyle.Render("j/k") + descStyle.Render("Rows")
+					navKeys += ui.KeyStyle.Render("u") + ui.DescStyle.Render("Toggle °C/°F") +
+					ui.KeyStyle.Render("p") + ui.DescStyle.Render("Favorite") +
+					ui.KeyStyle.Render("r") + ui.DescStyle.Render("Refresh") +
+					ui.KeyStyle.Render("j/k") + ui.DescStyle.Render("Rows")
 				}
 
 				var statusElements []string
 				if m.activePanel == searchPanel {
-					statusElements = append(statusElements, keyStyle.Render("Enter"), descStyle.Render("Search"))
+					statusElements = append(statusElements, ui.KeyStyle.Render("Enter"), ui.DescStyle.Render("Search"))
 				}
 				statusElements = append(statusElements, navKeys)
 
-				// Hide Help key legend when active panel is searchPanel to avoid displaying '?' while typing.
 				if m.activePanel != searchPanel {
-					statusElements = append(statusElements, keyStyle.Render("?"), descStyle.Render("Help"))
+					statusElements = append(statusElements, ui.KeyStyle.Render("?"), ui.DescStyle.Render("Help"))
 				}
 
 				if m.activePanel == searchPanel {
-					statusElements = append(statusElements, keyStyle.Render("Esc"), descStyle.Render("Unfocus"))
-					statusElements = append(statusElements, keyStyle.Render("Ctrl+C"), descStyle.Render("Exit"))
+					statusElements = append(statusElements, ui.KeyStyle.Render("Esc"), ui.DescStyle.Render("Unfocus"))
+					statusElements = append(statusElements, ui.KeyStyle.Render("Ctrl+C"), ui.DescStyle.Render("Exit"))
 				} else {
-					statusElements = append(statusElements, keyStyle.Render("Esc / Ctrl+C"), descStyle.Render("Exit"))
+					statusElements = append(statusElements, ui.KeyStyle.Render("Esc / Ctrl+C"), ui.DescStyle.Render("Exit"))
 				}
 
 				statusElements = append(statusElements,
-							lipgloss.NewStyle().Foreground(gray).Padding(0, 1).Render("│"),
-							lipgloss.NewStyle().Foreground(cyan).Italic(true).Render(fmt.Sprintf("WeatherTUI - [res: %dx%d]", m.termWidth, m.termHeight)),
+							lipgloss.NewStyle().Foreground(ui.Gray).Padding(0, 1).Render("│"),
+							lipgloss.NewStyle().Foreground(ui.Cyan).Italic(true).Render(fmt.Sprintf("WeatherTUI - [res: %dx%d]", m.termWidth, m.termHeight)),
 				)
 
 				statusBar := lipgloss.JoinHorizontal(lipgloss.Left, statusElements...)
@@ -893,13 +757,6 @@ func (m model) View() string {
 				MaxWidth(m.termWidth).
 				MaxHeight(m.termHeight).
 				Render("\n" + fullLayout + "\n")
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func getLogFilePath() (string, error) {
