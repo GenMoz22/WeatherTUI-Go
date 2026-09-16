@@ -48,6 +48,15 @@ var (
 	BorderForeground(red)
 
 	selectedRowStyle = lipgloss.NewStyle().Background(lipgloss.Color("#2d3748")).Foreground(white).Bold(true)
+
+	// Help overlay modal styles
+	helpOverlayStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(cyan).
+	Background(darkBg).
+	Padding(1, 2)
+	helpTitleStyle   = lipgloss.NewStyle().Foreground(cyan).Bold(true)
+	helpSectionStyle = lipgloss.NewStyle().Foreground(yellow).Bold(true)
 )
 
 type activePanel int
@@ -74,6 +83,7 @@ type model struct {
 	selectedRow   int
 	termWidth     int
 	termHeight    int
+	showHelp      bool
 }
 
 func initialModel() model {
@@ -96,6 +106,7 @@ func initialModel() model {
 		selectedRow:   0,
 		termWidth:     100,
 		termHeight:    24,
+		showHelp:      false,
 	}
 }
 
@@ -135,6 +146,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeyMsg:
+			// Toggle help overlay on '?' when not typing inside the active text input.
+			if msg.String() == "?" && (m.activePanel != searchPanel || m.showHelp) {
+				m.showHelp = !m.showHelp
+				return m, nil
+			}
+
+			// When help overlay is active, Esc or 'q' closes the overlay modal.
+			if m.showHelp {
+				switch msg.Type {
+					case tea.KeyEsc, tea.KeyCtrlC:
+						m.showHelp = false
+						return m, nil
+					case tea.KeyRunes:
+						if msg.String() == "q" || msg.String() == "Q" {
+							m.showHelp = false
+							return m, nil
+						}
+				}
+				return m, nil
+			}
+
 			switch msg.Type {
 				case tea.KeyCtrlC:
 					return m, tea.Quit
@@ -225,13 +257,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									}
 	}
 
-	if m.activePanel == searchPanel {
+	if m.activePanel == searchPanel && !m.showHelp {
 		var inputCmd tea.Cmd
 		m.textInput, inputCmd = m.textInput.Update(msg)
 		cmds = append(cmds, inputCmd)
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m model) renderHelpOverlay() string {
+	var sb strings.Builder
+
+	sb.WriteString(helpTitleStyle.Render("KEYBINDINGS & SYSTEM HELP") + "\n\n")
+
+	sb.WriteString(helpSectionStyle.Render("GLOBAL CONTROLS") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Tab"), descStyle.Render("Cycle focus between panels")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("?"), descStyle.Render("Toggle this contextual help overlay")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Ctrl+C"), descStyle.Render("Force terminate application")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("Esc"), descStyle.Render("Unfocus search / Exit application")))
+
+	sb.WriteString(helpSectionStyle.Render("SEARCH PANEL") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Enter"), descStyle.Render("Dispatch location query")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("Text Input"), descStyle.Render("Type city or location name")))
+
+	sb.WriteString(helpSectionStyle.Render("FORECAST PANEL") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("j / k"), descStyle.Render("Navigate 14-day daily records")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Up / Down"), descStyle.Render("Navigate 14-day daily records")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("u"), descStyle.Render("Toggle temperature unit (°C / °F)")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("r"), descStyle.Render("Force refresh data (bypass cache)")))
+
+	sb.WriteString(lipgloss.NewStyle().Foreground(gray).Italic(true).Render("Press ? or Esc to return to dashboard"))
+
+	return helpOverlayStyle.Render(sb.String())
 }
 
 func (m model) View() string {
@@ -424,6 +482,19 @@ func (m model) View() string {
 
 				mainDashboard := lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, forecastBox)
 
+				// Overlay modal layout when help toggle is active
+				if m.showHelp {
+					helpModal := m.renderHelpOverlay()
+					mainDashboard = lipgloss.Place(
+						m.termWidth,
+				    m.termHeight-2,
+				    lipgloss.Center,
+				    lipgloss.Center,
+				    helpModal,
+				    lipgloss.WithWhitespaceChars(" "),
+					)
+				}
+
 				// ------------------------------------------------------------------------
 				// 4. FOOTER STATUS BAR
 				// ------------------------------------------------------------------------
@@ -443,7 +514,8 @@ func (m model) View() string {
 				statusBar := lipgloss.JoinHorizontal(lipgloss.Left,
 								     keyStyle.Render("Enter"), descStyle.Render("Search"),
 								     navKeys,
-					 keyStyle.Render("Esc"), descStyle.Render(escDescription),
+					 keyStyle.Render("?"), descStyle.Render("Help"),
+								     keyStyle.Render("Esc"), descStyle.Render(escDescription),
 								     lipgloss.NewStyle().Foreground(gray).Padding(0, 1).Render("│"),
 								     lipgloss.NewStyle().Foreground(cyan).Italic(true).Render(fmt.Sprintf("WeatherTUI - [res: %dx%d]", m.termWidth, m.termHeight)),
 				)
