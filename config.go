@@ -24,14 +24,14 @@ type ConfigManager struct {
 	filePath string
 }
 
-// NewConfigManager initializes a ConfigManager resolving XDG path ~/.config/WeatherTUI/config.json.
+// NewConfigManager initializes a ConfigManager resolving path ~/.local/share/WeatherTUI/config.json.
 func NewConfigManager() (*ConfigManager, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("unable to locate user home directory: %w", err)
 	}
 
-	configDir := filepath.Join(homeDir, ".config", "WeatherTUI")
+	configDir := filepath.Join(homeDir, ".local", "share", "WeatherTUI")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}

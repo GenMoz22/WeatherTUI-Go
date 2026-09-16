@@ -4,7 +4,7 @@ Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates pa
 
 ## Key Features
 - **Automatic Startup Target**: Automatically resolves and loads weather metrics for your favorite city upon launch, gracefully falling back to your most recent search.
-- **Persistent JSON Configuration**: Persists settings such as preferred temperature unit (°C/°F), favorite city, and search history atomically in `~/.config/WeatherTUI/config.json`.
+- **Persistent JSON Configuration**: Persists settings such as preferred temperature unit (°C/°F), favorite city, and search history atomically in `~/.local/share/WeatherTUI/config.json`.
 - **Resilient Fallbacks**: Non-blocking European Air Quality Index (AQI) fetch with standard fallback and error boundary handling.
 - **14-Day Visual Forecasts**: Relative precipitation probability density bars with dynamic color thresholds.
 - **In-Memory Cache**: Thread-safe TTL cache layer (`sync.RWMutex`, 30 min expiration) avoiding redundant API requests.
