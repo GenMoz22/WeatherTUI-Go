@@ -69,27 +69,30 @@ type activePanel int
 
 const (
 	searchPanel activePanel = iota
+	historyPanel
 	forecastPanel
 )
 
 type errMsg error
 
 type model struct {
-	textInput     textinput.Model
-	spinner       spinner.Model
-	client        *WeatherClient
-	weather       WeatherResponse
-	cityName      string
-	lastQuery     string
-	err           error
-	loading       bool
-	hasData       bool
-	useFahrenheit bool
-	activePanel   activePanel
-	selectedRow   int
-	termWidth     int
-	termHeight    int
-	showHelp      bool
+	textInput          textinput.Model
+	spinner            spinner.Model
+	client             *WeatherClient
+	weather            WeatherResponse
+	cityName           string
+	lastQuery          string
+	recentLocations    []string
+	historySelectedRow int
+	err                error
+	loading            bool
+	hasData            bool
+	useFahrenheit      bool
+	activePanel        activePanel
+	selectedRow        int
+	termWidth          int
+	termHeight         int
+	showHelp           bool
 }
 
 func initialModel() model {
@@ -104,15 +107,17 @@ func initialModel() model {
 	s.Style = lipgloss.NewStyle().Foreground(cyan)
 
 	return model{
-		textInput:     ti,
-		spinner:       s,
-		client:        NewWeatherClient(),
-		activePanel:   searchPanel,
-		useFahrenheit: false,
-		selectedRow:   0,
-		termWidth:     100,
-		termHeight:    24,
-		showHelp:      false,
+		textInput:          ti,
+		spinner:            s,
+		client:             NewWeatherClient(),
+		activePanel:        searchPanel,
+		useFahrenheit:      false,
+		selectedRow:        0,
+		historySelectedRow: 0,
+		recentLocations:    make([]string, 0),
+		termWidth:          100,
+		termHeight:         24,
+		showHelp:           false,
 	}
 }
 
@@ -121,8 +126,9 @@ func (m model) Init() tea.Cmd {
 }
 
 type weatherMsg struct {
-	data string
-	w    WeatherResponse
+	data  string
+	query string
+	w     WeatherResponse
 }
 
 func celsiusToFahrenheit(c float64) float64 {
@@ -137,9 +143,32 @@ func (m model) fetchWeatherCmd(city string, forceRefresh bool) tea.Cmd {
 			if err != nil {
 				return errMsg(err)
 			}
-			return weatherMsg{data: name, w: w}
+			return weatherMsg{data: name, query: city, w: w}
 		},
 	)
+}
+
+func (m *model) addRecentLocation(location string) {
+	cleanLoc := strings.TrimSpace(location)
+	if cleanLoc == "" {
+		return
+	}
+
+	// Remove duplicate if it already exists to move it to the top
+	updated := make([]string, 0, len(m.recentLocations)+1)
+	for _, loc := range m.recentLocations {
+		if !strings.EqualFold(loc, cleanLoc) {
+			updated = append(updated, loc)
+		}
+	}
+
+	// Prepend newest search query
+	m.recentLocations = append([]string{cleanLoc}, updated...)
+
+	// Cap history to 10 entries max
+	if len(m.recentLocations) > 10 {
+		m.recentLocations = m.recentLocations[:10]
+	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -152,7 +181,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeyMsg:
-			// Toggle help overlay on '?' only when not typing inside the search input panel or when overlay is open.
+			// Toggle help overlay on '?' only when not typing inside search input panel or when overlay is open.
 			if msg.String() == "?" && (m.activePanel != searchPanel || m.showHelp) {
 				m.showHelp = !m.showHelp
 				return m, nil
@@ -187,8 +216,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				case tea.KeyTab:
 					if m.activePanel == searchPanel {
-						m.activePanel = forecastPanel
+						m.activePanel = historyPanel
 						m.textInput.Blur()
+					} else if m.activePanel == historyPanel {
+						m.activePanel = forecastPanel
 					} else {
 						m.activePanel = searchPanel
 						m.textInput.Focus()
@@ -207,10 +238,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, m.fetchWeatherCmd(city, false)
 					}
 
+					if m.activePanel == historyPanel && len(m.recentLocations) > 0 {
+						selectedCity := m.recentLocations[m.historySelectedRow]
+						m.loading = true
+						m.err = nil
+						m.lastQuery = selectedCity
+						return m, m.fetchWeatherCmd(selectedCity, false)
+					}
+
 				case tea.KeyUp, tea.KeyDown, tea.KeyRunes:
 					key := msg.String()
 
-					// Scope navigation and shortcuts to specific panels to prevent interference during search input typing.
+					if m.activePanel == historyPanel && len(m.recentLocations) > 0 {
+						switch key {
+							case "k", "up":
+								if m.historySelectedRow > 0 {
+									m.historySelectedRow--
+								}
+								return m, nil
+							case "j", "down":
+								if m.historySelectedRow < len(m.recentLocations)-1 {
+									m.historySelectedRow++
+								}
+								return m, nil
+						}
+					}
+
 					if m.activePanel == forecastPanel {
 						if m.hasData {
 							switch key {
@@ -246,6 +299,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									m.cityName = msg.data
 									m.weather = msg.w
 									m.selectedRow = 0
+									m.addRecentLocation(msg.query)
 									m.textInput.SetValue("")
 									return m, nil
 
@@ -287,6 +341,10 @@ func (m model) renderHelpOverlay() string {
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Enter"), descStyle.Render("Dispatch location query")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("Text Input"), descStyle.Render("Type city or location name")))
 
+	sb.WriteString(helpSectionStyle.Render("RECENT LOCATIONS PANEL") + "\n")
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("j / k"), descStyle.Render("Navigate recent queries")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", keyStyle.Render("Enter"), descStyle.Render("Load selected recent location")))
+
 	sb.WriteString(helpSectionStyle.Render("FORECAST PANEL") + "\n")
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("j / k"), descStyle.Render("Navigate 14-day daily records")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", keyStyle.Render("Up / Down"), descStyle.Render("Navigate 14-day daily records")))
@@ -322,9 +380,15 @@ func (m model) View() string {
 	}
 
 	const searchBoxHeight = 5
-	currentBoxHeight := availableHeight - searchBoxHeight
+	historyBoxHeight := 7
+	currentBoxHeight := availableHeight - searchBoxHeight - historyBoxHeight
+	if currentBoxHeight < 7 {
+		currentBoxHeight = 7
+		historyBoxHeight = availableHeight - searchBoxHeight - currentBoxHeight
+	}
 
 	searchInnerHeight := searchBoxHeight - 2
+	historyInnerHeight := historyBoxHeight - 2
 	currentInnerHeight := currentBoxHeight - 2
 	forecastInnerHeight := availableHeight - 2
 
@@ -346,7 +410,59 @@ func (m model) View() string {
 		Render(searchContent)
 
 		// ------------------------------------------------------------------------
-		// 2. ATMOSPHERE MONITOR PANEL
+		// 2. RECENT LOCATIONS PANEL
+		// ------------------------------------------------------------------------
+		historyTitle := " RECENT LOCATIONS "
+		historyBoxStyleToUse := boxStyle
+		if m.activePanel == historyPanel {
+			historyBoxStyleToUse = activeBoxStyle
+		}
+
+		historyHeader := panelTitleStyle.Render(historyTitle)
+		var historyContent strings.Builder
+		historyContent.WriteString(historyHeader + "\n\n")
+
+		if len(m.recentLocations) == 0 {
+			historyContent.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No recent lookups"))
+		} else {
+			maxVisibleRows := historyInnerHeight - 2
+			if maxVisibleRows < 1 {
+				maxVisibleRows = 1
+			}
+
+			startIdx := 0
+			if m.historySelectedRow >= maxVisibleRows {
+				startIdx = m.historySelectedRow - maxVisibleRows + 1
+			}
+			endIdx := startIdx + maxVisibleRows
+			if endIdx > len(m.recentLocations) {
+				endIdx = len(m.recentLocations)
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				loc := m.recentLocations[i]
+				rowStr := fmt.Sprintf(" %-30s", loc)
+				if len(rowStr) > leftWidth-6 {
+					rowStr = rowStr[:leftWidth-6]
+				}
+
+				if m.activePanel == historyPanel && i == m.historySelectedRow {
+					historyContent.WriteString(selectedRowStyle.Render(rowStr) + "\n")
+				} else {
+					historyContent.WriteString(valueStyle.Render(rowStr) + "\n")
+				}
+			}
+		}
+
+		historyBox := historyBoxStyleToUse.
+		Width(leftWidth - 2).
+		Height(historyInnerHeight).
+		MaxWidth(leftWidth - 2).
+		MaxHeight(historyInnerHeight + 2).
+		Render(historyContent.String())
+
+		// ------------------------------------------------------------------------
+		// 3. ATMOSPHERE MONITOR PANEL
 		// ------------------------------------------------------------------------
 		var currentBox string
 
@@ -428,10 +544,10 @@ func (m model) View() string {
 			Render(currentHeader + "\n\n" + placeholderText)
 		}
 
-		leftColumn := lipgloss.JoinVertical(lipgloss.Left, searchBox, currentBox)
+		leftColumn := lipgloss.JoinVertical(lipgloss.Left, searchBox, historyBox, currentBox)
 
 		// ------------------------------------------------------------------------
-		// 3. 14-DAY FORECAST PANEL
+		// 4. 14-DAY FORECAST PANEL
 		// ------------------------------------------------------------------------
 		var forecastBox string
 		forecastHeader := panelTitleStyle.Render(" METRIC: 14-DAY CORE FORECAST ") + "\n\n"
@@ -540,18 +656,23 @@ func (m model) View() string {
 				}
 
 				// ------------------------------------------------------------------------
-				// 4. FOOTER STATUS BAR
+				// 5. FOOTER STATUS BAR
 				// ------------------------------------------------------------------------
 				navKeys := keyStyle.Render("Tab") + descStyle.Render("Switch View")
 
-				if m.activePanel == forecastPanel {
+				if m.activePanel == historyPanel {
+					navKeys += keyStyle.Render("j/k") + descStyle.Render("Navigate History") +
+					keyStyle.Render("Enter") + descStyle.Render("Load Location")
+				} else if m.activePanel == forecastPanel {
 					navKeys += keyStyle.Render("u") + descStyle.Render("Toggle °C/°F") +
 					keyStyle.Render("r") + descStyle.Render("Refresh Cache") +
 					keyStyle.Render("j/k") + descStyle.Render("Navigate Rows")
 				}
 
 				var statusElements []string
-				statusElements = append(statusElements, keyStyle.Render("Enter"), descStyle.Render("Search"))
+				if m.activePanel == searchPanel {
+					statusElements = append(statusElements, keyStyle.Render("Enter"), descStyle.Render("Search"))
+				}
 				statusElements = append(statusElements, navKeys)
 
 				// Hide Help key legend when active panel is searchPanel to avoid displaying '?' while typing.
