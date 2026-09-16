@@ -202,6 +202,32 @@ func getTemperatureStyle(tempCelsius float64) lipgloss.Style {
 	return baseStyle.Foreground(red)
 }
 
+// getHumidityStyle returns a Lipgloss style dynamically based on relative humidity percentage.
+func getHumidityStyle(humidity int) lipgloss.Style {
+	baseStyle := lipgloss.NewStyle().Bold(true)
+	if humidity <= 30 {
+		return baseStyle.Foreground(green)
+	} else if humidity <= 50 {
+		return baseStyle.Foreground(yellow)
+	} else if humidity <= 75 {
+		return baseStyle.Foreground(orange)
+	}
+	return baseStyle.Foreground(red)
+}
+
+// getWindSpeedStyle returns a Lipgloss style dynamically based on wind speed in km/h.
+func getWindSpeedStyle(speedKmH float64) lipgloss.Style {
+	baseStyle := lipgloss.NewStyle().Bold(true)
+	if speedKmH <= 15.0 {
+		return baseStyle.Foreground(green)
+	} else if speedKmH <= 30.0 {
+		return baseStyle.Foreground(yellow)
+	} else if speedKmH <= 50.0 {
+		return baseStyle.Foreground(orange)
+	}
+	return baseStyle.Foreground(red)
+}
+
 func getUVIndexDesc(uv float64) string {
 	if uv <= 2 {
 		return lipgloss.NewStyle().Foreground(green).Render(fmt.Sprintf("%.1f (LOW)", uv))
@@ -656,9 +682,15 @@ func (m model) View() string {
 			tempStyle := getTemperatureStyle(rawCelsius)
 			renderedTemp := tempStyle.Render(fmt.Sprintf("%.1f %s", tempVal, unitStr))
 
-			uvDesc := getUVIndexDesc(m.weather.Current.UvIndex)
+			humidityStyle := getHumidityStyle(m.weather.Current.Humidity)
+			renderedHumidity := humidityStyle.Render(fmt.Sprintf("%d%%", m.weather.Current.Humidity))
+
+			windStyle := getWindSpeedStyle(m.weather.Current.WindSpeed)
 			windDirCompass := degreesToCompass(m.weather.Current.WindDirection)
 			windStr := fmt.Sprintf("%.1f km/h %s (%.0f°)", m.weather.Current.WindSpeed, windDirCompass, m.weather.Current.WindDirection)
+			renderedWind := windStyle.Render(windStr)
+
+			uvDesc := getUVIndexDesc(m.weather.Current.UvIndex)
 
 			metricsContent := fmt.Sprintf(
 				"%s  %-12s %s\n"+
@@ -669,8 +701,8 @@ func (m model) View() string {
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s",
 				 labelStyle.Render("[TEMP]"), "Temperature:", renderedTemp,
-						      labelStyle.Render("[HUMI]"), "Humidity:", valueStyle.Render(fmt.Sprintf("%d%%", m.weather.Current.Humidity)),
-						      labelStyle.Render("[WIND]"), "Wind:", valueStyle.Render(windStr),
+						      labelStyle.Render("[HUMI]"), "Humidity:", renderedHumidity,
+						      labelStyle.Render("[WIND]"), "Wind:", renderedWind,
 						      labelStyle.Render("[UVIN]"), "UV Index:", uvDesc,
 						      labelStyle.Render("[SUNR]"), "Sun Rise:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunrise),
 						      labelStyle.Render("[SUNS]"), "Sun Set:", lipgloss.NewStyle().Foreground(blue).Render(m.weather.Current.Sunset),
