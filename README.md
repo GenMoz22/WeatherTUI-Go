@@ -3,11 +3,13 @@ Terminal User Interface (TUI) weather application written in Go that delivers in
 Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates parallel integrations with Open-Meteo APIs alongside an intelligent, concurrent-safe internal caching engine.
 
 ## Key Features
-- **Dynamic System Locale Detection**: Automatically detects user's system language (`LANG`, `LC_ALL`, `LC_MESSAGES`) to query localized location names via geocoding with English fallback.
-- **Async Visual Feedback**: Animated Lip Gloss-styled spinners integrated with Bubble Tea event loops during network dispatches.
+- **Resilient Fallbacks**: Non-blocking European Air Quality Index (AQI) fetch with standard fallback and error boundary handling.
 - **14-Day Visual Forecasts**: Relative precipitation probability density bars with dynamic color thresholds.
 - **In-Memory Cache**: Thread-safe TTL cache layer (`sync.RWMutex`, 30 min expiration) avoiding redundant API requests.
-- **Resilient Fallbacks**: Non-blocking European Air Quality Index (AQI) fetch with standard fallback and error boundary handling.
+- **Recent Searches History**: Dedicated panel tracking recent lookups with quick reload capability (`Enter`).
+- **Dynamic System Locale Detection**: Automatically detects user's system language (`LANG`, `LC_ALL`, `LC_MESSAGES`) to query localized location names via geocoding with English fallback.
+- **Async Visual Feedback**: Animated Lip Gloss-styled spinners integrated with Bubble Tea event loops during network dispatches.
+- **Contextual Help Overlay**: Modal view accessible via `?` displaying keybindings and navigation controls.
 
 ## Core Dependencies
 - [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea): Elm-inspired TUI runtime engine.
