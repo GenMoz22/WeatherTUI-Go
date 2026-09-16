@@ -136,7 +136,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyMsg:
 			switch msg.Type {
-				case tea.KeyCtrlC, tea.KeyEsc:
+				case tea.KeyCtrlC:
+					return m, tea.Quit
+
+				case tea.KeyEsc:
+					if m.activePanel == searchPanel {
+						m.activePanel = forecastPanel
+						m.textInput.Blur()
+						return m, nil
+					}
 					return m, tea.Quit
 
 				case tea.KeyTab:
@@ -427,10 +435,15 @@ func (m model) View() string {
 					keyStyle.Render("j/k") + descStyle.Render("Navigate Rows")
 				}
 
+				escDescription := "Exit"
+				if m.activePanel == searchPanel {
+					escDescription = "Unfocus"
+				}
+
 				statusBar := lipgloss.JoinHorizontal(lipgloss.Left,
 								     keyStyle.Render("Enter"), descStyle.Render("Search"),
 								     navKeys,
-					 keyStyle.Render("Esc"), descStyle.Render("Exit"),
+					 keyStyle.Render("Esc"), descStyle.Render(escDescription),
 								     lipgloss.NewStyle().Foreground(gray).Padding(0, 1).Render("│"),
 								     lipgloss.NewStyle().Foreground(cyan).Italic(true).Render(fmt.Sprintf("WeatherTUI - [res: %dx%d]", m.termWidth, m.termHeight)),
 				)
