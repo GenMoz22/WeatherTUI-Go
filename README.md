@@ -3,6 +3,8 @@ Terminal User Interface (TUI) weather application written in Go that delivers in
 Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates parallel integrations with Open-Meteo APIs alongside an intelligent, concurrent-safe internal caching engine.
 
 ## Key Features
+- **Automatic Startup Target**: Automatically resolves and loads weather metrics for your favorite city upon launch, gracefully falling back to your most recent search.
+- **Persistent JSON Configuration**: Persists settings such as preferred temperature unit (°C/°F), favorite city, and search history atomically in `~/.config/WeatherTUI/config.json`.
 - **Resilient Fallbacks**: Non-blocking European Air Quality Index (AQI) fetch with standard fallback and error boundary handling.
 - **14-Day Visual Forecasts**: Relative precipitation probability density bars with dynamic color thresholds.
 - **In-Memory Cache**: Thread-safe TTL cache layer (`sync.RWMutex`, 30 min expiration) avoiding redundant API requests.
@@ -99,6 +101,7 @@ Logs are formatted in **JSON** via Go's standard `log/slog` and written concurre
 ```text
 WeatherTUI-Go/
 ├── cache.go         # Cache engine (sync.RWMutex, 30m TTL)
+├── config.go        # JSON configuration persistence
 ├── go.mod           # Go module dependency management
 ├── go.sum           # Cryptographic checksums for dependencies
 ├── LICENSE          # Project licensing information
