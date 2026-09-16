@@ -57,6 +57,12 @@ var (
 	Padding(1, 2)
 	helpTitleStyle   = lipgloss.NewStyle().Foreground(cyan).Bold(true)
 	helpSectionStyle = lipgloss.NewStyle().Foreground(yellow).Bold(true)
+
+	// Fallback style for low-resolution screens
+	smallScreenStyle = lipgloss.NewStyle().
+	Foreground(yellow).
+	Bold(true).
+	Align(lipgloss.Center, lipgloss.Center)
 )
 
 type activePanel int
@@ -146,7 +152,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeyMsg:
-			// Toggle help overlay on '?' when not typing inside the active text input.
+			// Toggle help overlay on '?' only when not typing inside the search input panel or when overlay is open.
 			if msg.String() == "?" && (m.activePanel != searchPanel || m.showHelp) {
 				m.showHelp = !m.showHelp
 				return m, nil
@@ -293,6 +299,14 @@ func (m model) renderHelpOverlay() string {
 }
 
 func (m model) View() string {
+	// Defensive screen resolution guard against vertical/horizontal clipping
+	if m.termWidth < 80 || m.termHeight < 20 {
+		return smallScreenStyle.
+		Width(m.termWidth).
+		Height(m.termHeight).
+		Render("Terminal screen too small. Please resize.")
+	}
+
 	availableHeight := m.termHeight - 4
 	if availableHeight < 14 {
 		availableHeight = 14
@@ -303,8 +317,8 @@ func (m model) View() string {
 		leftWidth = 40
 	}
 	rightWidth := m.termWidth - leftWidth - 2
-	if rightWidth < 45 {
-		rightWidth = 45
+	if rightWidth < 40 {
+		rightWidth = 40
 	}
 
 	const searchBoxHeight = 5
@@ -324,7 +338,12 @@ func (m model) View() string {
 		}
 
 		searchContent := fmt.Sprintf("%s\n\n%s", panelTitleStyle.Render(searchTitle), m.textInput.View())
-		searchBox := searchBoxStyleToUse.Width(leftWidth - 2).Height(searchInnerHeight).Render(searchContent)
+		searchBox := searchBoxStyleToUse.
+		Width(leftWidth - 2).
+		Height(searchInnerHeight).
+		MaxWidth(leftWidth - 2).
+		MaxHeight(searchInnerHeight + 2).
+		Render(searchContent)
 
 		// ------------------------------------------------------------------------
 		// 2. ATMOSPHERE MONITOR PANEL
@@ -345,7 +364,12 @@ func (m model) View() string {
 		if m.loading {
 			loadingText := fmt.Sprintf("%s Fetching telemetry pipeline...", m.spinner.View())
 			placeholderText := fmt.Sprintf("STATUS: PARSING METRICS...\n\n%s\nSynchronizing Open-Meteo DB\nStream pipelines active...", loadingText)
-			currentBox = currentStyle.Width(leftWidth - 2).Height(currentInnerHeight).Render(currentHeader + "\n\n" + placeholderText)
+			currentBox = currentStyle.
+			Width(leftWidth - 2).
+			Height(currentInnerHeight).
+			MaxWidth(leftWidth - 2).
+			MaxHeight(currentInnerHeight + 2).
+			Render(currentHeader + "\n\n" + placeholderText)
 		} else if m.hasData {
 			aqiVal := m.weather.Current.AirQualityIndex
 			var aqiDesc string
@@ -385,13 +409,23 @@ func (m model) View() string {
 			)
 
 			fullCurrentView := currentHeader + "\n\n" + lipgloss.PlaceVertical(currentInnerHeight-3, lipgloss.Top, metricsContent)
-			currentBox = currentStyle.Width(leftWidth - 2).Height(currentInnerHeight).Render(fullCurrentView)
+			currentBox = currentStyle.
+			Width(leftWidth - 2).
+			Height(currentInnerHeight).
+			MaxWidth(leftWidth - 2).
+			MaxHeight(currentInnerHeight + 2).
+			Render(fullCurrentView)
 		} else {
 			placeholderText := "STATUS: SYSTEM IDLE\n\nAwaiting dispatcher query...\nInsert location name above."
 			if m.err != nil {
 				placeholderText = lipgloss.NewStyle().Foreground(red).Render(fmt.Sprintf("[ERR] SYSTEM EXCEPTION:\n%v", m.err))
 			}
-			currentBox = currentStyle.Width(leftWidth - 2).Height(currentInnerHeight).Render(currentHeader + "\n\n" + placeholderText)
+			currentBox = currentStyle.
+			Width(leftWidth - 2).
+			Height(currentInnerHeight).
+			MaxWidth(leftWidth - 2).
+			MaxHeight(currentInnerHeight + 2).
+			Render(currentHeader + "\n\n" + placeholderText)
 		}
 
 		leftColumn := lipgloss.JoinVertical(lipgloss.Left, searchBox, currentBox)
@@ -470,14 +504,24 @@ func (m model) View() string {
 						contentLines = contentLines[:maxAllowedRows]
 					}
 
-					forecastBox = forecastBoxStyleToUse.Width(rightWidth).Height(forecastInnerHeight).Render(forecastHeader + tableHeader + tableDivider + strings.Join(contentLines, "\n"))
+					forecastBox = forecastBoxStyleToUse.
+						Width(rightWidth).
+						Height(forecastInnerHeight).
+						MaxWidth(rightWidth).
+						MaxHeight(forecastInnerHeight + 2).
+						Render(forecastHeader + tableHeader + tableDivider + strings.Join(contentLines, "\n"))
 				} else {
 					statusMsg := "[WAIT] Pipeline awaiting telemetry input..."
 					if m.loading {
 						statusMsg = fmt.Sprintf("%s Streaming telemetry from Open-Meteo clusters...", m.spinner.View())
 					}
 					emptyLines := fmt.Sprintf("\n\n\n\n\n\n\n          %s", statusMsg)
-					forecastBox = forecastBoxStyleToUse.Width(rightWidth).Height(forecastInnerHeight).Render(forecastHeader + tableHeader + tableDivider + emptyLines)
+					forecastBox = forecastBoxStyleToUse.
+						Width(rightWidth).
+						Height(forecastInnerHeight).
+						MaxWidth(rightWidth).
+						MaxHeight(forecastInnerHeight + 2).
+						Render(forecastHeader + tableHeader + tableDivider + emptyLines)
 				}
 
 				mainDashboard := lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, forecastBox)
@@ -506,21 +550,35 @@ func (m model) View() string {
 					keyStyle.Render("j/k") + descStyle.Render("Navigate Rows")
 				}
 
-				escDescription := "Exit"
-				if m.activePanel == searchPanel {
-					escDescription = "Unfocus"
+				var statusElements []string
+				statusElements = append(statusElements, keyStyle.Render("Enter"), descStyle.Render("Search"))
+				statusElements = append(statusElements, navKeys)
+
+				// Hide Help key legend when active panel is searchPanel to avoid displaying '?' while typing.
+				if m.activePanel != searchPanel {
+					statusElements = append(statusElements, keyStyle.Render("?"), descStyle.Render("Help"))
 				}
 
-				statusBar := lipgloss.JoinHorizontal(lipgloss.Left,
-								     keyStyle.Render("Enter"), descStyle.Render("Search"),
-								     navKeys,
-					 keyStyle.Render("?"), descStyle.Render("Help"),
-								     keyStyle.Render("Esc"), descStyle.Render(escDescription),
-								     lipgloss.NewStyle().Foreground(gray).Padding(0, 1).Render("│"),
-								     lipgloss.NewStyle().Foreground(cyan).Italic(true).Render(fmt.Sprintf("WeatherTUI - [res: %dx%d]", m.termWidth, m.termHeight)),
+				if m.activePanel == searchPanel {
+					statusElements = append(statusElements, keyStyle.Render("Esc"), descStyle.Render("Unfocus"))
+					statusElements = append(statusElements, keyStyle.Render("Ctrl+C"), descStyle.Render("Exit"))
+				} else {
+					statusElements = append(statusElements, keyStyle.Render("Esc / Ctrl+C"), descStyle.Render("Exit"))
+				}
+
+				statusElements = append(statusElements,
+							lipgloss.NewStyle().Foreground(gray).Padding(0, 1).Render("│"),
+							lipgloss.NewStyle().Foreground(cyan).Italic(true).Render(fmt.Sprintf("WeatherTUI - [res: %dx%d]", m.termWidth, m.termHeight)),
 				)
 
-				return "\n" + mainDashboard + "\n\n" + statusBar + "\n"
+				statusBar := lipgloss.JoinHorizontal(lipgloss.Left, statusElements...)
+
+				fullLayout := lipgloss.JoinVertical(lipgloss.Left, mainDashboard, statusBar)
+
+				return lipgloss.NewStyle().
+				MaxWidth(m.termWidth).
+				MaxHeight(m.termHeight).
+				Render("\n" + fullLayout + "\n")
 }
 
 func maxInt(a, b int) int {
