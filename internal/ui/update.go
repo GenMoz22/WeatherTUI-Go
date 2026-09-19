@@ -20,10 +20,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case WeatherMsg:
 			m.Loading = false
 			m.HasData = true
-			m.CityName = msg.Data
+
+			resolvedName := msg.Data
+			if resolvedName == "" {
+				resolvedName = msg.W.CityName
+			}
+
+			m.CityName = resolvedName
+			m.LastQuery = resolvedName
 			m.Weather = msg.W
 			m.SelectedRow = 0
-			m.AddRecentLocation(msg.Query)
+
+			m.AddRecentLocation(resolvedName)
+
 			m.TextInput.SetValue("")
 			return m, nil
 
@@ -166,8 +175,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									}
 									return m, nil
 								case "p", "P":
-									if m.LastQuery != "" {
-										m.ToggleFavorite(m.LastQuery)
+									targetCity := m.CityName
+									if targetCity == "" {
+										targetCity = m.LastQuery
+									}
+									if targetCity != "" {
+										m.ToggleFavorite(targetCity)
 									}
 									return m, nil
 							}

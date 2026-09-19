@@ -7,10 +7,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+var coordRegex = regexp.MustCompile(`^\s*(-?\d+(?:\.\d+)?)\s*[\s,]\s*(-?\d+(?:\.\d+)?)\s*$`)
 
 // DailyForecast holds daily metric values.
 type DailyForecast struct {
@@ -66,7 +70,7 @@ func (cs *CacheService) Get(city string) (WeatherResponse, bool) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 
-	key := strings.ToLower(city)
+	key := strings.ToLower(strings.TrimSpace(city))
 	cached, found := cs.cache[key]
 	if found && !cs.isExpired(cached.Timestamp) {
 		return cached, true
@@ -79,7 +83,7 @@ func (cs *CacheService) Put(city string, response WeatherResponse) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	key := strings.ToLower(city)
+	key := strings.ToLower(strings.TrimSpace(city))
 	cs.cache[key] = response
 }
 
@@ -88,7 +92,7 @@ func (cs *CacheService) Delete(city string) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	key := strings.ToLower(city)
+	key := strings.ToLower(strings.TrimSpace(city))
 	delete(cs.cache, key)
 }
 
@@ -99,6 +103,13 @@ type geoAPIResponse struct {
 		Name      string  `json:"name"`
 		Country   string  `json:"country"`
 	} `json:"results"`
+}
+
+type reverseGeoAPIResponse struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Name      string  `json:"name"`
+	Country   string  `json:"country"`
 }
 
 type weatherAPIResponse struct {
@@ -155,42 +166,114 @@ func getSystemLanguage() string {
 	return "en"
 }
 
+// ParseCoordinates checks if input matches latitude and longitude pattern.
+func ParseCoordinates(query string) (float64, float64, bool) {
+	matches := coordRegex.FindStringSubmatch(query)
+	if len(matches) != 3 {
+		return 0, 0, false
+	}
+
+	lat, errLat := strconv.ParseFloat(matches[1], 64)
+	lon, errLon := strconv.ParseFloat(matches[2], 64)
+
+	if errLat != nil || errLon != nil || lat < -90 || lat > 90 || lon < -180 || lon > 180 {
+		return 0, 0, false
+	}
+
+	return lat, lon, true
+}
+
+// sanitizeCityQuery extracts the clean city name by removing country suffixes in parentheses.
+func sanitizeCityQuery(city string) string {
+	city = strings.TrimSpace(city)
+	if idx := strings.Index(city, " ("); idx != -1 {
+		return strings.TrimSpace(city[:idx])
+	}
+	return city
+}
+
+// reverseGeocode attempts to resolve coordinates to a location name using Open-Meteo reverse geocoding API.
+func (wc *WeatherClient) reverseGeocode(lat, lon float64, lang string) string {
+	reverseURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/get?latitude=%f&longitude=%f&language=%s&format=json", lat, lon, lang)
+
+	resp, err := wc.client.Get(reverseURL)
+	if err != nil {
+		slog.Warn("Reverse geocoding network error, falling back to coordinates string", "error", err)
+		return fmt.Sprintf("%.4f, %.4f", lat, lon)
+	}
+	defer resp.Body.Close()
+
+	var res reverseGeoAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil || res.Name == "" {
+		slog.Warn("Reverse geocoding resolution failed, falling back to coordinates string")
+		return fmt.Sprintf("%.4f, %.4f", lat, lon)
+	}
+
+	if res.Country != "" {
+		return fmt.Sprintf("%s (%s)", res.Name, res.Country)
+	}
+	return res.Name
+}
+
 // GetWeather queries Open-Meteo endpoints or retrieves cached entries.
 func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResponse, string, error) {
+	cleanQuery := sanitizeCityQuery(city)
+
 	if forceRefresh {
 		wc.cache.Delete(city)
+		wc.cache.Delete(cleanQuery)
 	} else if cachedResponse, found := wc.cache.Get(city); found {
 		slog.Debug("Cache HIT", "city", city, "resolved_name", cachedResponse.CityName)
+		cachedResponse.FromCache = true
+		return cachedResponse, cachedResponse.CityName, nil
+	} else if cachedResponse, found := wc.cache.Get(cleanQuery); found {
+		slog.Debug("Cache HIT via clean query", "city", cleanQuery, "resolved_name", cachedResponse.CityName)
 		cachedResponse.FromCache = true
 		return cachedResponse, cachedResponse.CityName, nil
 	}
 
 	sysLang := getSystemLanguage()
-	slog.Info("Cache MISS or Refresh. Executing geocoding lookup", "city", city, "lang", sysLang)
+	var lat, lon float64
+	var fullName string
 
-	encodedCity := url.QueryEscape(city)
-	geoURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=%s&format=json", encodedCity, sysLang)
+	if parsedLat, parsedLon, isCoords := ParseCoordinates(city); isCoords {
+		lat = parsedLat
+		lon = parsedLon
+		slog.Info("Coordinates pattern matched. Executing reverse geocoding lookup", "lat", lat, "lon", lon)
+		fullName = wc.reverseGeocode(lat, lon, sysLang)
+	} else {
+		slog.Info("Cache MISS or Refresh. Executing geocoding lookup", "city", cleanQuery, "lang", sysLang)
 
-	resp, err := wc.client.Get(geoURL)
-	if err != nil {
-		slog.Error("Geocoding network error", "city", city, "error", err)
-		return WeatherResponse{}, "", fmt.Errorf("geocoding network error: %w", err)
+		encodedCity := url.QueryEscape(cleanQuery)
+		geoURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=%s&format=json", encodedCity, sysLang)
+
+		resp, err := wc.client.Get(geoURL)
+		if err != nil {
+			slog.Error("Geocoding network error", "city", cleanQuery, "error", err)
+			return WeatherResponse{}, "", fmt.Errorf("geocoding network error: %w", err)
+		}
+		defer resp.Body.Close()
+
+		var geoData geoAPIResponse
+		if err := json.NewDecoder(resp.Body).Decode(&geoData); err != nil || len(geoData.Results) == 0 {
+			slog.Error("Location target unresolved", "city", cleanQuery)
+			return WeatherResponse{}, "", fmt.Errorf("location target not found")
+		}
+		loc := geoData.Results[0]
+		lat = loc.Latitude
+		lon = loc.Longitude
+		if loc.Country != "" {
+			fullName = fmt.Sprintf("%s (%s)", loc.Name, loc.Country)
+		} else {
+			fullName = loc.Name
+		}
 	}
-	defer resp.Body.Close()
-
-	var geoData geoAPIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&geoData); err != nil || len(geoData.Results) == 0 {
-		slog.Error("Location target unresolved", "city", city)
-		return WeatherResponse{}, "", fmt.Errorf("location target not found")
-	}
-	loc := geoData.Results[0]
-	fullName := fmt.Sprintf("%s (%s)", loc.Name, loc.Country)
 
 	forecastURL := fmt.Sprintf(
 		"https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"+
 		"&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m"+
 		"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14",
-		loc.Latitude, loc.Longitude,
+		lat, lon,
 	)
 
 		slog.Info("Dispatching forecast request", "url", forecastURL)
@@ -208,7 +291,7 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 			return WeatherResponse{}, "", fmt.Errorf("forecast decoding error: %w", err)
 		}
 
-		aqiURL := fmt.Sprintf("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%f&longitude=%f&current=european_aqi", loc.Latitude, loc.Longitude)
+		aqiURL := fmt.Sprintf("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%f&longitude=%f&current=european_aqi", lat, lon)
 		europeanAQI := 0
 		if aqiResp, err := wc.client.Get(aqiURL); err == nil {
 			var apiAQI airQualityAPIResponse
@@ -273,5 +356,8 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 		}
 
 		wc.cache.Put(city, finalResponse)
+		wc.cache.Put(cleanQuery, finalResponse)
+		wc.cache.Put(fullName, finalResponse)
+
 		return finalResponse, fullName, nil
 }

@@ -157,16 +157,21 @@ func (m Model) View() string {
 		var currentBox string
 
 		currentHeaderTitle := " MONITOR: ATMOSPHERE "
-		if m.HasData && m.CityName != "" {
+		displayName := m.CityName
+		if displayName == "" && m.HasData {
+			displayName = m.Weather.CityName
+		}
+
+		if m.HasData && displayName != "" {
 			cacheBadge := ""
 			if m.Weather.FromCache {
 				cacheBadge = lipgloss.NewStyle().Foreground(Yellow).Bold(true).Render(" [CACHE HIT]")
 			}
 			favBadge := ""
-			if strings.EqualFold(m.LastQuery, m.FavoriteCity) {
+			if strings.EqualFold(displayName, m.FavoriteCity) || strings.EqualFold(m.LastQuery, m.FavoriteCity) {
 				favBadge = FavoriteStyle.Render(" [FAV]")
 			}
-			currentHeaderTitle = fmt.Sprintf(" MONITOR: %s%s%s ", m.CityName, favBadge, cacheBadge)
+			currentHeaderTitle = fmt.Sprintf(" MONITOR: %s%s%s ", displayName, favBadge, cacheBadge)
 		}
 		currentHeader := PanelTitleStyle.Render(currentHeaderTitle)
 
