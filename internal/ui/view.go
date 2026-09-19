@@ -221,7 +221,11 @@ func (m Model) View() string {
 
 			uvDesc := GetUVIndexDesc(m.Weather.Current.UvIndex)
 
+			moonStr := fmt.Sprintf("%s %d%%", m.Weather.Current.MoonPhase.PhaseIcon, m.Weather.Current.MoonPhase.IlluminationPercent)
+			renderedMoon := lipgloss.NewStyle().Foreground(Yellow).Render(moonStr)
+
 			metricsContent := fmt.Sprintf(
+				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
 				"%s  %-12s %s\n"+
@@ -233,6 +237,7 @@ func (m Model) View() string {
 						      LabelStyle.Render("[HUMI]"), "Humidity:", renderedHumidity,
 						      LabelStyle.Render("[WIND]"), "Wind:", renderedWind,
 						      LabelStyle.Render("[UVIN]"), "UV Index:", uvDesc,
+						      LabelStyle.Render("[MOON]"), "Moon Phase:", renderedMoon,
 						      LabelStyle.Render("[SUNR]"), "Sun Rise:", lipgloss.NewStyle().Foreground(Blue).Render(m.Weather.Current.Sunrise),
 						      LabelStyle.Render("[SUNS]"), "Sun Set:", lipgloss.NewStyle().Foreground(Blue).Render(m.Weather.Current.Sunset),
 						      LabelStyle.Render("[AQI ]"), "Air Quality:", aqiDesc,

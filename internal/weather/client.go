@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,12 @@ import (
 )
 
 var coordRegex = regexp.MustCompile(`^\s*(-?\d+(?:\.\d+)?)\s*[\s,]\s*(-?\d+(?:\.\d+)?)\s*$`)
+
+// MoonPhaseData represents moon illumination percentage and its icon representation.
+type MoonPhaseData struct {
+	PhaseIcon          string
+	IlluminationPercent int
+}
 
 // DailyForecast holds daily metric values.
 type DailyForecast struct {
@@ -35,6 +42,7 @@ type WeatherData struct {
 	Sunrise           string
 	Sunset            string
 	AirQualityIndex   int
+	MoonPhase         MoonPhaseData
 }
 
 // WeatherResponse aggregates telemetry, forecast cycles, location name, and cache timestamp.
@@ -215,6 +223,63 @@ func (wc *WeatherClient) reverseGeocode(lat, lon float64, lang string) string {
 	return res.Name
 }
 
+// CalculateMoonPhase computes lunar phase icon and illumination percentage for a target time.
+func CalculateMoonPhase(t time.Time) MoonPhaseData {
+	year := t.Year()
+	month := int(t.Month())
+	day := t.Day()
+
+	if month < 3 {
+		year--
+		month += 12
+	}
+
+	c := float64(year) / 100.0
+	b := 2.0 - c + math.Floor(c/4.0)
+	jd := math.Floor(365.25*float64(year+4716)) + math.Floor(30.6001*float64(month+1)) + float64(day) + b - 1524.5
+
+	synodicMonth := 29.53058867
+	knownNewMoonJD := 2451549.5 // Reference New Moon: Jan 6, 2000 18:14 UTC
+
+	daysSinceNew := jd - knownNewMoonJD
+	moonAge := math.Mod(daysSinceNew, synodicMonth)
+	if moonAge < 0 {
+		moonAge += synodicMonth
+	}
+
+	// Calculate illumination ratio based on phase angle (0.0 to 1.0)
+	phaseAngle := (moonAge / synodicMonth) * 2.0 * math.Pi
+	illumination := (1.0 - math.Cos(phaseAngle)) / 2.0
+	illuminationPercent := int(math.Round(illumination * 100.0))
+
+	var icon string
+	switch {
+		case moonAge < 1.84566:
+			icon = "🌑" // New Moon
+		case moonAge < 5.53699:
+			icon = "🌒" // Waxing Crescent
+		case moonAge < 9.22831:
+			icon = "🌓" // First Quarter
+		case moonAge < 12.91963:
+			icon = "🌔" // Waxing Gibbous
+		case moonAge < 16.61096:
+			icon = "🌕" // Full Moon
+		case moonAge < 20.30228:
+			icon = "🌖" // Waning Gibbous
+		case moonAge < 23.99361:
+			icon = "🌗" // Last Quarter
+		case moonAge < 27.68493:
+			icon = "🌘" // Waning Crescent
+		default:
+			icon = "🌑" // New Moon
+	}
+
+	return MoonPhaseData{
+		PhaseIcon:          icon,
+		IlluminationPercent: illuminationPercent,
+	}
+}
+
 // GetWeather queries Open-Meteo endpoints or retrieves cached entries.
 func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResponse, string, error) {
 	cleanQuery := sanitizeCityQuery(city)
@@ -311,6 +376,8 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 			sunsetStr = apiMeteo.Daily.Sunset[0][11:16]
 		}
 
+		moonData := CalculateMoonPhase(time.Now())
+
 		currentData := WeatherData{
 			Temperature:       apiMeteo.Current.Temperature,
 			WindSpeed:         apiMeteo.Current.WindSpeed,
@@ -321,6 +388,7 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 			Sunrise:           sunriseStr,
 			Sunset:            sunsetStr,
 			AirQualityIndex:   europeanAQI,
+			MoonPhase:         moonData,
 		}
 
 		dailyCount := len(apiMeteo.Daily.Time)
