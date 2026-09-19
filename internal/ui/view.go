@@ -14,6 +14,7 @@ func (m Model) renderHelpOverlay() string {
 
 	sb.WriteString(HelpSectionStyle.Render("GLOBAL CONTROLS") + "\n")
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("Tab"), DescStyle.Render("Cycle focus between panels")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("1 / 2 / 3"), DescStyle.Render("Direct jump to Search / Recent / Forecast panel")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("?"), DescStyle.Render("Toggle this contextual help overlay")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("Ctrl+C"), DescStyle.Render("Force terminate application")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", KeyStyle.Render("Esc"), DescStyle.Render("Unfocus search / Exit application")))
@@ -76,7 +77,7 @@ func (m Model) View() string {
 	forecastInnerHeight := availableHeight - 2
 
 		// 1. SEARCH PANEL
-		searchTitle := " COMPONENT: SEARCH ENGINE "
+		searchTitle := " [1] SEARCH ENGINE "
 		searchBoxStyleToUse := BoxStyle
 		if m.ActivePanel == SearchPanel {
 			searchBoxStyleToUse = ActiveBoxStyle
@@ -91,7 +92,7 @@ func (m Model) View() string {
 		Render(searchContent)
 
 		// 2. RECENT & FAVORITE LOCATIONS PANEL
-		historyTitle := " RECENT & FAVORITES "
+		historyTitle := " [2] RECENT & FAVORITES "
 		historyBoxStyleToUse := BoxStyle
 		if m.ActivePanel == HistoryPanel {
 			historyBoxStyleToUse = ActiveBoxStyle
@@ -256,7 +257,7 @@ func (m Model) View() string {
 
 		// 4. 14-DAY FORECAST PANEL
 		var forecastBox string
-		forecastHeader := PanelTitleStyle.Render(" METRIC: 14-DAY CORE FORECAST ") + "\n\n"
+		forecastHeader := PanelTitleStyle.Render(" [3] FORECAST (14-DAY CORE) ") + "\n\n"
 
 			forecastBoxStyleToUse := BoxStyle
 				if m.ActivePanel == ForecastPanel {
@@ -367,7 +368,7 @@ func (m Model) View() string {
 				}
 
 				// 5. FOOTER STATUS BAR
-				navKeys := KeyStyle.Render("Tab") + DescStyle.Render("Switch View")
+				navKeys := KeyStyle.Render("Tab / 1,2,3") + DescStyle.Render("Switch View")
 
 				if m.ActivePanel == HistoryPanel {
 					navKeys += KeyStyle.Render("j/k") + DescStyle.Render("Navigate") +

@@ -41,6 +41,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyMsg:
+			// Global help toggle when not focused on search input or when help overlay is already visible
 			if msg.String() == "?" && (m.ActivePanel != SearchPanel || m.ShowHelp) {
 				m.ShowHelp = !m.ShowHelp
 				return m, nil
@@ -58,6 +59,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 				}
 				return m, nil
+			}
+
+			// Handle direct numeric shortcuts 1, 2, 3 when SearchPanel is unfocused
+			if m.ActivePanel != SearchPanel && msg.Type == tea.KeyRunes {
+				switch msg.String() {
+					case "1":
+						m.ActivePanel = SearchPanel
+						m.TextInput.Focus()
+						return m, nil
+					case "2":
+						m.ActivePanel = HistoryPanel
+						return m, nil
+					case "3":
+						m.ActivePanel = ForecastPanel
+						return m, nil
+				}
 			}
 
 			switch msg.Type {
