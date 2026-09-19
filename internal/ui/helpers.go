@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -63,18 +64,54 @@ func GetWindSpeedStyle(speedKmH float64) lipgloss.Style {
 	return baseStyle.Foreground(Red)
 }
 
-// GetUVIndexDesc returns a formatted string with warning color styling depending on the UV index value.
+// GetUVIndexDesc renders the UV index with a block-style progress bar and severity label.
 func GetUVIndexDesc(uv float64) string {
-	if uv <= 2 {
-		return lipgloss.NewStyle().Foreground(Green).Render(fmt.Sprintf("%.1f (LOW)", uv))
-	} else if uv <= 5 {
-		return lipgloss.NewStyle().Foreground(Yellow).Render(fmt.Sprintf("%.1f (MODERATE)", uv))
-	} else if uv <= 7 {
-		return lipgloss.NewStyle().Foreground(Yellow).Bold(true).Render(fmt.Sprintf("%.1f (HIGH)", uv))
-	} else if uv <= 10 {
-		return lipgloss.NewStyle().Foreground(Red).Render(fmt.Sprintf("%.1f (VERY HIGH)", uv))
+	const totalBlocks = 10
+	cappedUV := uv
+	if cappedUV > 11.0 {
+		cappedUV = 11.0
 	}
-	return lipgloss.NewStyle().Foreground(Red).Bold(true).Render(fmt.Sprintf("%.1f (EXTREME)", uv))
+	if cappedUV < 0 {
+		cappedUV = 0
+	}
+
+	filledBlocks := int((cappedUV / 11.0) * float64(totalBlocks))
+	if filledBlocks > totalBlocks {
+		filledBlocks = totalBlocks
+	}
+
+	var barBuilder strings.Builder
+	barBuilder.WriteString("[")
+	for i := 0; i < totalBlocks; i++ {
+		if i < filledBlocks {
+			barBuilder.WriteString("█")
+		} else {
+			barBuilder.WriteString("░")
+		}
+	}
+	barBuilder.WriteString("]")
+
+	var label string
+	var style lipgloss.Style
+
+	if uv <= 2 {
+		label = "LOW"
+		style = lipgloss.NewStyle().Foreground(Green)
+	} else if uv <= 5 {
+		label = "MODERATE"
+		style = lipgloss.NewStyle().Foreground(Yellow)
+	} else if uv <= 7 {
+		label = "HIGH"
+		style = lipgloss.NewStyle().Foreground(Yellow).Bold(true)
+	} else if uv <= 10 {
+		label = "VERY HIGH"
+		style = lipgloss.NewStyle().Foreground(Red)
+	} else {
+		label = "EXTREME"
+		style = lipgloss.NewStyle().Foreground(Red).Bold(true)
+	}
+
+	return style.Render(fmt.Sprintf("%s %.1f (%s)", barBuilder.String(), uv, label))
 }
 
 // MaxInt returns the larger of two integer values.
