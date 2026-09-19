@@ -183,6 +183,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 										m.ToggleFavorite(targetCity)
 									}
 									return m, nil
+								case "v", "V":
+									m.ShowHourly = !m.ShowHourly
+									return m, nil
 							}
 						}
 

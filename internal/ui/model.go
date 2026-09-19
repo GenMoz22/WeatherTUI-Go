@@ -44,6 +44,7 @@ type Model struct {
 	Loading            bool
 	HasData            bool
 	UseFahrenheit      bool
+	ShowHourly         bool
 	ActivePanel        ActivePanel
 	SelectedRow        int
 	TermWidth          int
@@ -94,6 +95,7 @@ func InitialModel() Model {
 		ConfigMgr:          cfgMgr,
 		ActivePanel:        SearchPanel,
 		UseFahrenheit:      useFahrenheit,
+		ShowHourly:         false,
 		FavoriteCity:       favoriteCity,
 		RecentLocations:    recentLocations,
 		SelectedRow:        0,

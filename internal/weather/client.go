@@ -19,7 +19,7 @@ var coordRegex = regexp.MustCompile(`^\s*(-?\d+(?:\.\d+)?)\s*[\s,]\s*(-?\d+(?:\.
 
 // MoonPhaseData represents moon illumination percentage and its icon representation.
 type MoonPhaseData struct {
-	PhaseIcon          string
+	PhaseIcon           string
 	IlluminationPercent int
 }
 
@@ -43,6 +43,8 @@ type WeatherData struct {
 	Sunset            string
 	AirQualityIndex   int
 	MoonPhase         MoonPhaseData
+	HourlyTemp        []float64
+	HourlyTime        []string
 }
 
 // WeatherResponse aggregates telemetry, forecast cycles, location name, and cache timestamp.
@@ -129,6 +131,10 @@ type weatherAPIResponse struct {
 		Precip        float64 `json:"precipitation_probability"`
 		Humidity      float64 `json:"relative_humidity_2m"`
 	} `json:"current"`
+	Hourly struct {
+		Time        []string  `json:"time"`
+		Temperature []float64 `json:"temperature_2m"`
+	} `json:"hourly"`
 	Daily struct {
 		Time              []string  `json:"time"`
 		TempMax           []float64 `json:"temperature_2m_max"`
@@ -247,7 +253,6 @@ func CalculateMoonPhase(t time.Time) MoonPhaseData {
 		moonAge += synodicMonth
 	}
 
-	// Calculate illumination ratio based on phase angle (0.0 to 1.0)
 	phaseAngle := (moonAge / synodicMonth) * 2.0 * math.Pi
 	illumination := (1.0 - math.Cos(phaseAngle)) / 2.0
 	illuminationPercent := int(math.Round(illumination * 100.0))
@@ -255,27 +260,27 @@ func CalculateMoonPhase(t time.Time) MoonPhaseData {
 	var icon string
 	switch {
 		case moonAge < 1.84566:
-			icon = "🌑" // New Moon
+			icon = "🌑"
 		case moonAge < 5.53699:
-			icon = "🌒" // Waxing Crescent
+			icon = "🌒"
 		case moonAge < 9.22831:
-			icon = "🌓" // First Quarter
+			icon = "🌓"
 		case moonAge < 12.91963:
-			icon = "🌔" // Waxing Gibbous
+			icon = "🌔"
 		case moonAge < 16.61096:
-			icon = "🌕" // Full Moon
+			icon = "🌕"
 		case moonAge < 20.30228:
-			icon = "🌖" // Waning Gibbous
+			icon = "🌖"
 		case moonAge < 23.99361:
-			icon = "🌗" // Last Quarter
+			icon = "🌗"
 		case moonAge < 27.68493:
-			icon = "🌘" // Waning Crescent
+			icon = "🌘"
 		default:
-			icon = "🌑" // New Moon
+			icon = "🌑"
 	}
 
 	return MoonPhaseData{
-		PhaseIcon:          icon,
+		PhaseIcon:           icon,
 		IlluminationPercent: illuminationPercent,
 	}
 }
@@ -337,6 +342,7 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 	forecastURL := fmt.Sprintf(
 		"https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"+
 		"&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m"+
+		"&hourly=temperature_2m"+
 		"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14",
 		lat, lon,
 	)
@@ -378,6 +384,13 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 
 		moonData := CalculateMoonPhase(time.Now())
 
+		hourlyTemp := make([]float64, 0, 24)
+		hourlyTime := make([]string, 0, 24)
+		if len(apiMeteo.Hourly.Temperature) >= 24 {
+			hourlyTemp = append(hourlyTemp, apiMeteo.Hourly.Temperature[:24]...)
+			hourlyTime = append(hourlyTime, apiMeteo.Hourly.Time[:24]...)
+		}
+
 		currentData := WeatherData{
 			Temperature:       apiMeteo.Current.Temperature,
 			WindSpeed:         apiMeteo.Current.WindSpeed,
@@ -389,6 +402,8 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 			Sunset:            sunsetStr,
 			AirQualityIndex:   europeanAQI,
 			MoonPhase:         moonData,
+			HourlyTemp:        hourlyTemp,
+			HourlyTime:        hourlyTime,
 		}
 
 		dailyCount := len(apiMeteo.Daily.Time)

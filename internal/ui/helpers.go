@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -96,22 +97,65 @@ func GetUVIndexDesc(uv float64) string {
 
 	if uv <= 2 {
 		label = "LOW"
-		style = lipgloss.NewStyle().Foreground(Green)
+		style = lipgloss.NewStyle().Foreground(Green).Bold(true)
 	} else if uv <= 5 {
 		label = "MODERATE"
-		style = lipgloss.NewStyle().Foreground(Yellow)
+		style = lipgloss.NewStyle().Foreground(Yellow).Bold(true)
 	} else if uv <= 7 {
 		label = "HIGH"
 		style = lipgloss.NewStyle().Foreground(Yellow).Bold(true)
 	} else if uv <= 10 {
 		label = "VERY HIGH"
-		style = lipgloss.NewStyle().Foreground(Red)
+		style = lipgloss.NewStyle().Foreground(Red).Bold(true)
 	} else {
 		label = "EXTREME"
 		style = lipgloss.NewStyle().Foreground(Red).Bold(true)
 	}
 
 	return style.Render(fmt.Sprintf("%s %.1f (%s)", barBuilder.String(), uv, label))
+}
+
+// RenderSparkline converts a float slice into a Braille/Sparkline character sequence.
+func RenderSparkline(values []float64) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	sparklines := []rune{' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
+
+	minVal := values[0]
+	maxVal := values[0]
+
+	for _, v := range values {
+		if v < minVal {
+			minVal = v
+		}
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+
+	valRange := maxVal - minVal
+
+	var sb strings.Builder
+	for _, v := range values {
+		var idx int
+		if valRange == 0 {
+			idx = 3
+		} else {
+			normalized := (v - minVal) / valRange
+			idx = int(math.Floor(normalized * float64(len(sparklines)-1)))
+			if idx >= len(sparklines) {
+				idx = len(sparklines) - 1
+			}
+			if idx < 0 {
+				idx = 0
+			}
+		}
+		sb.WriteRune(sparklines[idx])
+	}
+
+	return sb.String()
 }
 
 // MaxInt returns the larger of two integer values.
