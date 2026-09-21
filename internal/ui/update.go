@@ -190,7 +190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 
 						if key == "u" || key == "U" {
-							m.UseFahrenheit = !m.UseFahrenheit
+							m.Imperial = !m.Imperial
 							m.SaveConfig()
 							return m, nil
 						}

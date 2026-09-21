@@ -32,7 +32,7 @@ func (m Model) renderHelpOverlay() string {
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("j / k"), DescStyle.Render("Navigate 14-day daily records")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("Up / Down"), DescStyle.Render("Navigate 14-day daily records")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("v"), DescStyle.Render("Toggle 24h hourly trend sparkline view")))
-	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("u"), DescStyle.Render("Toggle temperature unit (°C / °F)")))
+	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("u"), DescStyle.Render("Toggle US/Imperial measurement units (°F, mph)")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n", KeyStyle.Render("p"), DescStyle.Render("Toggle active city favorite status")))
 	sb.WriteString(fmt.Sprintf("  %-12s %s\n\n", KeyStyle.Render("r"), DescStyle.Render("Force refresh data (bypass cache)")))
 
@@ -169,21 +169,29 @@ func (m Model) View() string {
 
 		rawCelsius := m.Weather.Current.Temperature
 		tempVal := rawCelsius
-		unitStr := "°C"
-		if m.UseFahrenheit {
+		tempUnitStr := "°C"
+		if m.Imperial {
 			tempVal = CelsiusToFahrenheit(rawCelsius)
-			unitStr = "°F"
+			tempUnitStr = "°F"
 		}
 
 		tempStyle := GetTemperatureStyle(rawCelsius)
-		renderedTemp := tempStyle.Render(fmt.Sprintf("%.1f %s", tempVal, unitStr))
+		renderedTemp := tempStyle.Render(fmt.Sprintf("%.1f %s", tempVal, tempUnitStr))
 
 		humidityStyle := GetHumidityStyle(m.Weather.Current.Humidity)
 		renderedHumidity := humidityStyle.Render(fmt.Sprintf("%d%%", m.Weather.Current.Humidity))
 
-		windStyle := GetWindSpeedStyle(m.Weather.Current.WindSpeed)
+		rawWindSpeed := m.Weather.Current.WindSpeed
+		windVal := rawWindSpeed
+		windUnitStr := "km/h"
+		if m.Imperial {
+			windVal = KmHToMph(rawWindSpeed)
+			windUnitStr = "mph"
+		}
+
+		windStyle := GetWindSpeedStyle(rawWindSpeed)
 		windDirCompass := DegreesToCompass(m.Weather.Current.WindDirection)
-		windStr := fmt.Sprintf("%.1f km/h %s (%.0f°)", m.Weather.Current.WindSpeed, windDirCompass, m.Weather.Current.WindDirection)
+		windStr := fmt.Sprintf("%.1f %s %s (%.0f°)", windVal, windUnitStr, windDirCompass, m.Weather.Current.WindDirection)
 		renderedWind := windStyle.Render(windStr)
 
 		uvDesc := GetUVIndexDesc(m.Weather.Current.UvIndex)
@@ -236,7 +244,7 @@ func (m Model) View() string {
 	if m.ShowHourly && m.HasData {
 		forecastTitle = "3. Hourly Trend (24h)"
 			unitStr := "°C"
-			if m.UseFahrenheit {
+			if m.Imperial {
 				unitStr = "°F"
 			}
 
@@ -244,7 +252,7 @@ func (m Model) View() string {
 			displayTemps := make([]float64, len(temps))
 			copy(displayTemps, temps)
 
-			if m.UseFahrenheit {
+			if m.Imperial {
 				for i, v := range displayTemps {
 					displayTemps[i] = CelsiusToFahrenheit(v)
 				}
@@ -293,7 +301,7 @@ func (m Model) View() string {
 		forecastTitle = "3. 14-Day Forecast"
 
 			unitHeader := "MAX (°C) │ MIN (°C)"
-			if m.UseFahrenheit {
+			if m.Imperial {
 				unitHeader = "MAX (°F) │ MIN (°F)"
 			}
 
@@ -332,7 +340,7 @@ func (m Model) View() string {
 
 					maxTemp := day.MaxTemp
 					minTemp := day.MinTemp
-					if m.UseFahrenheit {
+					if m.Imperial {
 						maxTemp = CelsiusToFahrenheit(maxTemp)
 						minTemp = CelsiusToFahrenheit(minTemp)
 					}
@@ -394,7 +402,7 @@ func (m Model) View() string {
 			KeyStyle.Render("Enter") + DescStyle.Render("Load")
 		} else if m.ActivePanel == ForecastPanel {
 			navKeys += KeyStyle.Render("v") + DescStyle.Render("Hourly") +
-			KeyStyle.Render("u") + DescStyle.Render("°C/°F") +
+			KeyStyle.Render("u") + DescStyle.Render("US/Metric") +
 			KeyStyle.Render("p") + DescStyle.Render("Fav") +
 			KeyStyle.Render("r") + DescStyle.Render("Refresh") +
 			KeyStyle.Render("j/k") + DescStyle.Render("Nav")

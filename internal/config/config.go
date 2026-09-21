@@ -13,7 +13,7 @@ import (
 
 // Config represents persistent application settings and user search data.
 type Config struct {
-	UseFahrenheit   bool     `json:"use_fahrenheit"`
+	Imperial        bool     `json:"imperial"`
 	FavoriteCity    string   `json:"favorite_city"`
 	RecentLocations []string `json:"recent_locations"`
 }
@@ -47,7 +47,7 @@ func (cm *ConfigManager) Load() (Config, error) {
 	defer cm.mu.Unlock()
 
 	defaultCfg := Config{
-		UseFahrenheit:   false,
+		Imperial:        false,
 		FavoriteCity:    "",
 		RecentLocations: make([]string, 0),
 	}

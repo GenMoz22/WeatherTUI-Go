@@ -43,7 +43,7 @@ type Model struct {
 	Err                error
 	Loading            bool
 	HasData            bool
-	UseFahrenheit      bool
+	Imperial           bool
 	ShowHourly         bool
 	ActivePanel        ActivePanel
 	SelectedRow        int
@@ -70,14 +70,14 @@ func InitialModel() Model {
 		slog.Error("Failed initializing ConfigManager", "error", err)
 	}
 
-	useFahrenheit := false
+	imperial := false
 	favoriteCity := ""
 	recentLocations := make([]string, 0)
 
 	if cfgMgr != nil {
 		cfg, err := cfgMgr.Load()
 		if err == nil {
-			useFahrenheit = cfg.UseFahrenheit
+			imperial = cfg.Imperial
 			favoriteCity = cfg.FavoriteCity
 			recentLocations = cfg.RecentLocations
 		}
@@ -94,7 +94,7 @@ func InitialModel() Model {
 		Client:             weather.NewWeatherClient(),
 		ConfigMgr:          cfgMgr,
 		ActivePanel:        SearchPanel,
-		UseFahrenheit:      useFahrenheit,
+		Imperial:           imperial,
 		ShowHourly:         false,
 		FavoriteCity:       favoriteCity,
 		RecentLocations:    recentLocations,
@@ -140,7 +140,7 @@ func (m *Model) SaveConfig() {
 		return
 	}
 	cfg := config.Config{
-		UseFahrenheit:   m.UseFahrenheit,
+		Imperial:        m.Imperial,
 		FavoriteCity:    m.FavoriteCity,
 		RecentLocations: m.RecentLocations,
 	}

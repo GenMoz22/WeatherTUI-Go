@@ -13,6 +13,11 @@ func CelsiusToFahrenheit(c float64) float64 {
 	return (c * 9 / 5) + 32
 }
 
+// KmHToMph converts wind speed from km/h to mph.
+func KmHToMph(kmh float64) float64 {
+	return kmh * 0.621371
+}
+
 // DegreesToCompass converts wind direction degrees to an ASCII direction arrow and compass point label.
 func DegreesToCompass(degrees float64) string {
 	arrows := []string{"↓", "↙", "←", "↖", "↑", "↗", "→", "↘"}
