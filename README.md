@@ -1,6 +1,6 @@
 Terminal User Interface (TUI) weather application written in Go that delivers instant 14-day forecasts and atmospheric telemetry directly to your command line. 
 
-Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates parallel integrations with Open-Meteo APIs alongside an intelligent, concurrent-safe internal caching engine.
+Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates parallel integrations with Open-Meteo APIs alongside an concurrent-safe internal caching engine.
 
 ## Key Features
 - **Automatic Startup Target**: Automatically resolves and loads weather metrics for your favorite city upon launch, gracefully falling back to your most recent search.
@@ -47,21 +47,21 @@ Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates pa
 ### Quick Start
 
 1. **Clone the repository**:
-   ```bash
-   git clone git@github.com:GenMoz22/WeatherTUI-Go.git
-   cd WeatherTUI-Go
 
+```bash
+git clone git@github.com:GenMoz22/WeatherTUI-Go.git
+cd WeatherTUI-Go
 ```
 
 2. **Build and Run**:
 You can run the project directly:
+
 ```bash
 go run .
-
 ```
 
-
 Or build a standalone binary:
+
 ```bash
 go build -o weather-tui
 ./weather-tui
