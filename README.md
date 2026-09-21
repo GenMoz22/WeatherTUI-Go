@@ -4,9 +4,10 @@ Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates pa
 
 ## Key Features
 - **Automatic Startup Target**: Automatically resolves and loads weather metrics for your favorite city upon launch, gracefully falling back to your most recent search.
-- **Persistent JSON Configuration**: Persists settings such as preferred temperature unit (°C/°F), favorite city, and search history atomically in `~/.local/share/WeatherTUI/config.json`.
+- **Persistent Configuration**: Persists settings such as preferred unit system (°C/°F, km/h/mph), favorite city, and search history atomically in `~/.local/share/WeatherTUI/config.json`.
 - **Resilient Fallbacks**: Non-blocking European Air Quality Index (AQI) fetch with standard fallback and error boundary handling.
 - **14-Day Visual Forecasts**: Relative precipitation probability density bars with dynamic color thresholds.
+- **24-Hour Thermal Trend**: Toggleable hourly temperature trend curve rendered via ASCII sparklines.
 - **In-Memory Cache**: Thread-safe TTL cache layer (`sync.RWMutex`, 30 min expiration) avoiding redundant API requests.
 - **Recent Searches History**: Dedicated panel tracking recent lookups with quick reload capability (`Enter`).
 - **Dynamic System Locale Detection**: Automatically detects user's system language (`LANG`, `LC_ALL`, `LC_MESSAGES`) to query localized location names via geocoding with English fallback.
@@ -18,6 +19,23 @@ Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates pa
 - [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss): Layout builder and advanced terminal styling primitives.
 - [charmbracelet/bubbles](https://github.com/charmbracelet/bubbles): Terminal UI components (Input fields, Spinners).
 - [natefinch/lumberjack](https://github.com/natefinch/lumberjack): Rolling file logger for system tracking.
+
+## Keybindings & Navigation
+
+| Key | Context | Action |
+| :--- | :--- | :--- |
+| `Tab` | Global | Cycle focus across panels (Search → Recent → Forecast) |
+| `1` / `2` / `3` | Global | Jump directly to Search, Recent & Favorites, or Forecast panel |
+| `?` | Global | Toggle keybindings help overlay modal |
+| `Esc` | Global | Unfocus search panel or return to dashboard |
+| `Ctrl+C` | Global | Force terminate application |
+| `Enter` | Search | Execute location query |
+| `j` / `k` or `Down` / `Up` | Recent / Forecast | Navigate rows in active panel |
+| `Enter` | Recent | Load selected historical location |
+| `p` | Recent / Forecast | Toggle favorite status for selected/active location |
+| `v` | Forecast | Toggle 24-hour hourly temperature trend sparkline |
+| `u` | Forecast | Toggle unit measurement system (°C / °F, km/h / mph) |
+| `r` | Forecast | Force refresh weather telemetry (bypass cache) |
 
 ---
 
@@ -51,24 +69,22 @@ go build -o weather-tui
 ---
 
 ## API Reference & Data Pipeline
-The application integrates with three endpoints from the **Open-Meteo** API ecosystem. Outgoing requests strictly enforce a **10-second timeout boundary**.
+The application integrates with three endpoints from the **Open-Meteo** API ecosystem. All outgoing network requests enforce a strict **10-second timeout boundary**.
 
 1. **Geocoding Engine**
-* **Endpoint**: `https://geocoding-api.open-meteo.com/v1/search`
-* **Parameters**: `name={city}&count=1&language=it&format=json`
-* **Role**: Dynamically detects the system's locale language (or defaults to en) and resolves raw string queries into explicit latitude, longitude, city name, and country metadata.
-
+   - **Endpoint**: `https://geocoding-api.open-meteo.com/v1/search`
+   - **Parameters**: `name={city}&count=1&language={sys_lang}&format=json`
+   - **Role**: Resolves search queries into coordinates and localized location metadata. Supports direct coordinate queries (latitude, longitude) with reverse geocoding fallback.
 
 2. **Meteorological Forecast Engine**
-* **Endpoint**: `https://api.open-meteo.com/v1/forecast`
-* **Parameters**: `latitude={lat}&longitude={lon}&current=temperature_2m,wind_speed_10m,uv_index,precipitation_probability,relative_humidity_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14`
-* **Role**: Retrieves real-time atmospheric metrics and 14-day forecast cycles.
-
+   - **Endpoint**: `https://api.open-meteo.com/v1/forecast`
+   - **Parameters**: `latitude={lat}&longitude={lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14`
+   - **Role**: Retrieves real-time atmospheric telemetry, 24-hour hourly temperatures, and 14-day daily forecast data.
 
 3. **Air Quality Analyzer**
-* **Endpoint**: `https://air-quality-api.open-meteo.com/v1/air-quality`
-* **Parameters**: `latitude={lat}&longitude={lon}&current=european_aqi`
-* **Role**: Queries the European Air Quality Index (AQI) and maps it to UI visual threat indicators (`EXCELLENT` $\le 20$, `POOR` $\le 40$, `CRITICAL` $> 40$).
+   - **Endpoint**: `https://air-quality-api.open-meteo.com/v1/air-quality`
+   - **Parameters**: `latitude={lat}&longitude={lon}&current=european_aqi`
+   - **Role**: Queries the European Air Quality Index (AQI) mapped to visual threat indicators (`EXCELLENT` $\le 20$, `POOR` $\le 40$, `CRITICAL` $> 40$).
 
 
 ## Architectural Systems
