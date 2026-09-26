@@ -444,7 +444,27 @@ func (m Model) View() string {
 			statusElements = append(statusElements, KeyStyle.Render("Esc / Ctrl+C"), DescStyle.Render("Exit"))
 		}
 
+		// Coordinate e info applicazione nel footer
+		coordsStr := "N/A"
+		coordsStyle := lipgloss.NewStyle().Foreground(LightGray)
+
+		if m.HasData {
+			coordsStr = fmt.Sprintf("%.4f, %.4f", m.Weather.Latitude, m.Weather.Longitude)
+			activeCity := m.CityName
+			if activeCity == "" {
+				activeCity = m.Weather.CityName
+			}
+
+			if activeCity != "" && strings.EqualFold(activeCity, m.FavoriteCity) {
+				coordsStyle = lipgloss.NewStyle().Foreground(Yellow).Bold(true)
+			} else {
+				coordsStyle = lipgloss.NewStyle().Foreground(Cyan)
+			}
+		}
+
 		statusElements = append(statusElements,
+					lipgloss.NewStyle().Foreground(Gray).Padding(0, 1).Render("│"),
+					coordsStyle.Render(fmt.Sprintf("Loc: %s", coordsStr)),
 					lipgloss.NewStyle().Foreground(Gray).Padding(0, 1).Render("│"),
 					lipgloss.NewStyle().Foreground(Cyan).Italic(true).Render(fmt.Sprintf("WeatherTUI [%dx%d]", m.TermWidth, m.TermHeight)),
 		)

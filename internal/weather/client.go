@@ -47,9 +47,11 @@ type WeatherData struct {
 	HourlyTime        []string
 }
 
-// WeatherResponse aggregates telemetry, forecast cycles, location name, and cache timestamp.
+// WeatherResponse aggregates telemetry, forecast cycles, location name, coordinates, and cache timestamp.
 type WeatherResponse struct {
 	CityName  string
+	Latitude  float64
+	Longitude float64
 	Current   WeatherData
 	Daily     []DailyForecast
 	Timestamp int64
@@ -432,6 +434,8 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 
 		finalResponse := WeatherResponse{
 			CityName:  fullName,
+			Latitude:  lat,
+			Longitude: lon,
 			Current:   currentData,
 			Daily:     dailyForecasts,
 			Timestamp: time.Now().UnixMilli(),
