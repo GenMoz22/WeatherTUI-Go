@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -177,6 +178,24 @@ func (m Model) View() string {
 
 		tempStyle := GetTemperatureStyle(rawCelsius)
 		renderedTemp := tempStyle.Render(fmt.Sprintf("%.1f %s", tempVal, tempUnitStr))
+
+		// Apparent Temperature calculation and validation
+		rawApparentCelsius := CalculateApparentTemperature(
+			rawCelsius,
+			m.Weather.Current.Humidity,
+			m.Weather.Current.WindSpeed,
+		)
+
+		// Append inline (feels like) representation only if the delta is physically significant (>= 0.5°C)
+		if math.Abs(rawCelsius-rawApparentCelsius) >= 0.5 {
+			apparentVal := rawApparentCelsius
+			if m.Imperial {
+				apparentVal = CelsiusToFahrenheit(rawApparentCelsius)
+			}
+			apparentStyle := GetTemperatureStyle(rawApparentCelsius)
+			renderedApparent := apparentStyle.Render(fmt.Sprintf("(feels %.1f %s)", apparentVal, tempUnitStr))
+			renderedTemp = fmt.Sprintf("%s %s", renderedTemp, renderedApparent)
+		}
 
 		humidityStyle := GetHumidityStyle(m.Weather.Current.Humidity)
 		renderedHumidity := humidityStyle.Render(fmt.Sprintf("%d%%", m.Weather.Current.Humidity))

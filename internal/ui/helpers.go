@@ -8,6 +8,22 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// CalculateApparentTemperature calculates perceived temperature (°C) based on actual temperature (°C),
+// relative humidity (%), and wind speed (km/h) using the Australian National Weather Service / Steadman formula.
+func CalculateApparentTemperature(tempCelsius float64, humidity int, windSpeedKmH float64) float64 {
+	// Convert wind speed from km/h to m/s as required by the Steadman apparent temperature model
+	windSpeedMS := windSpeedKmH / 3.6
+
+	// Calculate water vapor pressure (hPa) from temperature and relative humidity
+	humidityRatio := float64(humidity) / 100.0
+	e := humidityRatio * 6.105 * math.Exp((17.27*tempCelsius)/(237.7+tempCelsius))
+
+	// Australian Apparent Temperature (AT) formula: AT = T + 0.33*e - 0.70*ws - 4.00
+	apparentTemp := tempCelsius + (0.33 * e) - (0.70 * windSpeedMS) - 4.00
+
+	return apparentTemp
+}
+
 // CelsiusToFahrenheit converts degrees Celsius to Fahrenheit.
 func CelsiusToFahrenheit(c float64) float64 {
 	return (c * 9 / 5) + 32
