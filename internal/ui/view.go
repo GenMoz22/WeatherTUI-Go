@@ -42,13 +42,198 @@ func (m Model) renderHelpOverlay() string {
 	return HelpOverlayStyle.Render(sb.String())
 }
 
+// renderSmallScreenLayout renders a compact layout for low-resolution terminals
+func (m Model) renderSmallScreenLayout() string {
+	width := m.TermWidth
+	availableHeight := m.TermHeight - 1
+	if availableHeight < 9 {
+		availableHeight = 9
+	}
+
+	const searchBoxHeight = 3
+	historyBoxHeight := 5
+	monitorBoxHeight := availableHeight - searchBoxHeight - historyBoxHeight
+	if monitorBoxHeight < 5 {
+		monitorBoxHeight = 5
+		historyBoxHeight = availableHeight - searchBoxHeight - monitorBoxHeight
+		if historyBoxHeight < 3 {
+			historyBoxHeight = 3
+		}
+	}
+
+	// 1. SEARCH PANEL
+	searchContent := m.TextInput.View()
+	searchBox := RenderPanelBox("1. Search", searchContent, width, searchBoxHeight, m.ActivePanel == SearchPanel, false)
+
+	// 2. MONITOR PANEL
+	currentTitle := "Monitor"
+	displayName := m.CityName
+	if displayName == "" && m.HasData {
+		displayName = m.Weather.CityName
+	}
+
+	if m.HasData && displayName != "" {
+		cacheBadge := ""
+		if m.Weather.FromCache {
+			cacheBadge = " [C]"
+		}
+		favBadge := ""
+		if strings.EqualFold(displayName, m.FavoriteCity) || strings.EqualFold(m.LastQuery, m.FavoriteCity) {
+			favBadge = " [F]"
+		}
+
+		fullTitle := fmt.Sprintf("Monitor: %s%s%s", displayName, favBadge, cacheBadge)
+		maxTitleLen := width - 4
+		if maxTitleLen > 0 && lipgloss.Width(fullTitle) > maxTitleLen {
+			currentTitle = lipgloss.NewStyle().MaxWidth(maxTitleLen).Render(fullTitle)
+		} else {
+			currentTitle = fullTitle
+		}
+	}
+
+	var currentInnerContent string
+	if m.Loading {
+		currentInnerContent = fmt.Sprintf("%s Fetching metrics...", m.Spinner.View())
+	} else if m.HasData {
+		rawCelsius := m.Weather.Current.Temperature
+		tempVal := rawCelsius
+		tempUnitStr := "°C"
+		if m.Imperial {
+			tempVal = CelsiusToFahrenheit(rawCelsius)
+			tempUnitStr = "°F"
+		}
+
+		tempStyle := GetTemperatureStyle(rawCelsius)
+		renderedTemp := tempStyle.Render(fmt.Sprintf("%.1f %s", tempVal, tempUnitStr))
+
+		humidityStyle := GetHumidityStyle(m.Weather.Current.Humidity)
+		renderedHumidity := humidityStyle.Render(fmt.Sprintf("%d%%", m.Weather.Current.Humidity))
+
+		rawWindSpeed := m.Weather.Current.WindSpeed
+		windVal := rawWindSpeed
+		windUnitStr := "km/h"
+		if m.Imperial {
+			windVal = KmHToMph(rawWindSpeed)
+			windUnitStr = "mph"
+		}
+
+		windStyle := GetWindSpeedStyle(rawWindSpeed)
+		windDirCompass := DegreesToCompass(m.Weather.Current.WindDirection)
+		windStr := fmt.Sprintf("%.1f %s %s", windVal, windUnitStr, windDirCompass)
+		renderedWind := windStyle.Render(windStr)
+
+		innerMaxW := width - 4
+		if innerMaxW < 10 {
+			innerMaxW = 10
+		}
+
+		formatRow := func(label, value string) string {
+			l := LabelStyle.Render(label)
+			row := fmt.Sprintf("%-10s %s", l, value)
+			if lipgloss.Width(row) > innerMaxW {
+				return lipgloss.NewStyle().MaxWidth(innerMaxW).Render(row)
+			}
+			return row
+		}
+
+		currentInnerContent = fmt.Sprintf(
+			"%s\n%s\n%s",
+			formatRow("Temp:", renderedTemp),
+				formatRow("Humidity:", renderedHumidity),
+					formatRow("Wind:", renderedWind),
+		)
+	} else {
+		currentInnerContent = "Awaiting query..."
+		if m.Err != nil {
+			currentInnerContent = lipgloss.NewStyle().Foreground(Red).Render(fmt.Sprintf("ERR: %v", m.Err))
+		}
+	}
+
+	isMonitorActive := m.ActivePanel != SearchPanel && m.ActivePanel != HistoryPanel
+	monitorBox := RenderPanelBox(currentTitle, currentInnerContent, width, monitorBoxHeight, isMonitorActive, m.Err != nil)
+
+	// 3. RECENT & FAVORITES PANEL
+	var historyContent strings.Builder
+	historyItems := m.GetHistoryItems()
+
+	if len(historyItems) == 0 {
+		historyContent.WriteString(lipgloss.NewStyle().Foreground(Gray).Render("No recent lookups"))
+	} else {
+		maxVisibleRows := historyBoxHeight - 2
+		if maxVisibleRows < 1 {
+			maxVisibleRows = 1
+		}
+
+		startIdx := 0
+		if m.HistorySelectedRow >= maxVisibleRows {
+			startIdx = m.HistorySelectedRow - maxVisibleRows + 1
+		}
+		endIdx := startIdx + maxVisibleRows
+		if endIdx > len(historyItems) {
+			endIdx = len(historyItems)
+		}
+
+		for i := startIdx; i < endIdx; i++ {
+			loc := historyItems[i]
+			isFav := strings.EqualFold(loc, m.FavoriteCity)
+
+			prefix := "  "
+			if isFav {
+				prefix = "* "
+			}
+
+			displayStr := prefix + loc
+			if len(displayStr) > width-6 {
+				displayStr = displayStr[:width-6]
+			}
+
+			if m.ActivePanel == HistoryPanel && i == m.HistorySelectedRow {
+				rowStr := fmt.Sprintf("▌ %-*s", width-6, displayStr)
+				historyContent.WriteString(SelectedRowStyle.Render(rowStr) + "\n")
+			} else if isFav {
+				rowStr := fmt.Sprintf("  %-*s", width-6, displayStr)
+				historyContent.WriteString(FavoriteStyle.Render(rowStr) + "\n")
+			} else {
+				rowStr := fmt.Sprintf("  %-*s", width-6, displayStr)
+				historyContent.WriteString(ValueStyle.Render(rowStr) + "\n")
+			}
+		}
+	}
+
+	historyBox := RenderPanelBox("2. History", historyContent.String(), width, historyBoxHeight, m.ActivePanel == HistoryPanel, false)
+
+	mainDashboard := lipgloss.JoinVertical(lipgloss.Left, searchBox, monitorBox, historyBox)
+
+	if m.ShowHelp {
+		helpModal := m.renderHelpOverlay()
+		mainDashboard = lipgloss.Place(
+			m.TermWidth,
+			m.TermHeight-1,
+			lipgloss.Center,
+			lipgloss.Center,
+			helpModal,
+			lipgloss.WithWhitespaceChars(" "),
+		)
+	}
+
+	// Compact Status Bar
+	navKeys := KeyStyle.Render("Tab") + DescStyle.Render("Switch")
+	statusBar := lipgloss.JoinHorizontal(lipgloss.Left, navKeys, KeyStyle.Render("?"), DescStyle.Render("Help"))
+
+	return lipgloss.JoinVertical(lipgloss.Left, mainDashboard, statusBar)
+}
+
 // View renders the application user interface
 func (m Model) View() string {
-	if m.TermWidth < 80 || m.TermHeight < 20 {
+	if m.TermWidth < 30 || m.TermHeight < 10 {
 		return SmallScreenStyle.
 		Width(m.TermWidth).
 		Height(m.TermHeight).
-		Render("Terminal screen too small. Please resize.")
+		Render("Terminal too small.")
+	}
+
+	if m.TermWidth < 80 || m.TermHeight < 20 {
+		return m.renderSmallScreenLayout()
 	}
 
 	availableHeight := m.TermHeight - 2

@@ -66,7 +66,7 @@ var (
 	Align(lipgloss.Center, lipgloss.Center)
 )
 
-// RenderPanelBox builds a LazyGit-styled panel box embedding the title directly into the top border line.
+// RenderPanelBox builds a panel box embedding the title directly into the top border line.
 func RenderPanelBox(title string, content string, width, height int, isActive bool, isError bool) string {
 	borderColor := BorderGray
 	titleStyle := PanelTitleStyle
