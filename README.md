@@ -8,6 +8,9 @@ Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates pa
 - **Resilient Fallbacks**: Non-blocking European Air Quality Index (AQI) fetch with standard fallback and error boundary handling.
 - **14-Day Visual Forecasts**: Relative precipitation probability density bars with dynamic color thresholds.
 - **24-Hour Thermal Trend**: Toggleable hourly temperature trend curve rendered via ASCII sparklines.
+- **Coordinates & Reverse Geocoding**: Direct coordinate input parsing (e.g. `41.9028, 12.4964`) with automated reverse geocoding lookup.
+- **Apparent Temperature Calculation**: Calculates real-time perceived temperature ("feels like") based on the Steadman / Australian Apparent Temperature model when atmospheric variance is significant.
+- **Lunar Telemetry**: Real-time lunar phase tracking with visual phase representation and illumination percentage.
 - **In-Memory Cache**: Thread-safe TTL cache layer (`sync.RWMutex`, 30 min expiration) avoiding redundant API requests.
 - **Recent Searches History**: Dedicated panel tracking recent lookups with quick reload capability (`Enter`).
 - **Dynamic System Locale Detection**: Automatically detects user's system language (`LANG`, `LC_ALL`, `LC_MESSAGES`) to query localized location names via geocoding with English fallback.
@@ -72,20 +75,21 @@ go build -o weather-tui
 The application integrates with three endpoints from the **Open-Meteo** API ecosystem. All outgoing network requests enforce a strict **10-second timeout boundary**.
 
 1. **Geocoding Engine**
-   - **Endpoint**: `https://geocoding-api.open-meteo.com/v1/search`
-   - **Parameters**: `name={city}&count=1&language={sys_lang}&format=json`
-   - **Role**: Resolves search queries into coordinates and localized location metadata. Supports direct coordinate queries (latitude, longitude) with reverse geocoding fallback.
+* **Endpoint**: `https://geocoding-api.open-meteo.com/v1/search` and `https://geocoding-api.open-meteo.com/v1/get`
+* **Parameters**: `name={city}&count=1&language={sys_lang}&format=json` / `latitude={lat}&longitude={lon}`
+* **Role**: Resolves search queries into coordinates and localized location metadata. Supports direct coordinate queries with reverse geocoding fallback.
+
 
 2. **Meteorological Forecast Engine**
-   - **Endpoint**: `https://api.open-meteo.com/v1/forecast`
-   - **Parameters**: `latitude={lat}&longitude={lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14`
-   - **Role**: Retrieves real-time atmospheric telemetry, 24-hour hourly temperatures, and 14-day daily forecast data.
+* **Endpoint**: `https://api.open-meteo.com/v1/forecast`
+* **Parameters**: `latitude={lat}&longitude={lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14`
+* **Role**: Retrieves real-time atmospheric telemetry, 24-hour hourly temperatures, and 14-day daily forecast data.
+
 
 3. **Air Quality Analyzer**
-   - **Endpoint**: `https://air-quality-api.open-meteo.com/v1/air-quality`
-   - **Parameters**: `latitude={lat}&longitude={lon}&current=european_aqi`
-   - **Role**: Queries the European Air Quality Index (AQI) mapped to visual threat indicators (`EXCELLENT` $\le 20$, `POOR` $\le 40$, `CRITICAL` $> 40$).
-
+* **Endpoint**: `https://air-quality-api.open-meteo.com/v1/air-quality`
+* **Parameters**: `latitude={lat}&longitude={lon}&current=european_aqi`
+* **Role**: Queries the European Air Quality Index (AQI) mapped to visual threat indicators (`EXCELLENT` $\le 20$, `POOR` $\le 40$, `CRITICAL` $> 40$).
 
 ## Architectural Systems
 
@@ -111,6 +115,7 @@ Logs are formatted in **JSON** via Go's standard `log/slog` and written concurre
 * **Network Fault Isolation**: Catches connectivity errors or API timeouts gracefully, presenting an actionable `[ERR] SYSTEM EXCEPTION` message in the status viewport without crashing the TUI event loop.
 * **Unresolved Location Target**: Handles zero-result queries from the geocoding service and notifies the user via status banners.
 * **Non-blocking AQI Failure**: If the European AQI lookup fails or returns bad data, the core weather parser degrades gracefully, defaulting the AQI metric to `0` without dropping temperature or forecast payloads.
+* **Terminal Dimension Guard**: Displays a clean warning overlay when terminal dimensions drop below 30x10 characters to prevent layout corruption, alongside a dynamic single-column layout for small viewports.
 
 ## Project Structure
 
