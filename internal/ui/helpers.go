@@ -58,8 +58,17 @@ func GetWeatherCondition(code int) (string, string) {
 			icon = style.Render("  \\   /  \n   .-.   \n─ (   ) ─\n   `-`   \n  /   \\  ")
 		case 1, 2, 3:
 			label = "Partly Cloudy"
-			style = lipgloss.NewStyle().Foreground(LightGray).Bold(true)
-			icon = style.Render("   \\  /  \n _ /\"\"\\  \n(   _  ) \n `-(_)-` \n         ")
+			sunStyle := lipgloss.NewStyle().Foreground(Yellow).Bold(true)
+			cloudStyle := lipgloss.NewStyle().Foreground(LightGray).Bold(true)
+
+			// Composite multi-color ASCII icon for Partly Cloudy (Sun behind cloud)
+			line1 := sunStyle.Render("  \\ ") + cloudStyle.Render(".-.   ")
+			line2 := sunStyle.Render("─ (") + cloudStyle.Render("   ). ")
+			line3 := cloudStyle.Render(" (___(__)")
+			line4 := "         "
+			line5 := "         "
+
+			icon = fmt.Sprintf("%s\n%s\n%s\n%s\n%s", line1, line2, line3, line4, line5)
 		case 45, 48:
 			label = "Foggy"
 			style = lipgloss.NewStyle().Foreground(DarkCyan)
