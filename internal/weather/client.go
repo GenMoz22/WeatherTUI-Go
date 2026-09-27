@@ -125,7 +125,29 @@ func (cs *CacheService) isExpired(timestamp int64) bool {
 	return (time.Now().UnixMilli() - timestamp) > (cs.expirationMinutes * 60 * 1000)
 }
 
-// Get retrieves cached weather telemetry if present and valid.
+// deepCopyResponse performs a deep copy of a WeatherResponse to guarantee thread safety.
+func deepCopyResponse(in WeatherResponse) WeatherResponse {
+	out := in
+
+	if in.Current.HourlyTemp != nil {
+		out.Current.HourlyTemp = make([]float64, len(in.Current.HourlyTemp))
+		copy(out.Current.HourlyTemp, in.Current.HourlyTemp)
+	}
+
+	if in.Current.HourlyTime != nil {
+		out.Current.HourlyTime = make([]string, len(in.Current.HourlyTime))
+		copy(out.Current.HourlyTime, in.Current.HourlyTime)
+	}
+
+	if in.Daily != nil {
+		out.Daily = make([]DailyForecast, len(in.Daily))
+		copy(out.Daily, in.Daily)
+	}
+
+	return out
+}
+
+// Get retrieves cached weather telemetry if present and valid with a deep copy of slices.
 func (cs *CacheService) Get(city string) (WeatherResponse, bool) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
@@ -133,18 +155,18 @@ func (cs *CacheService) Get(city string) (WeatherResponse, bool) {
 	key := strings.ToLower(strings.TrimSpace(city))
 	cached, found := cs.cache[key]
 	if found && !cs.isExpired(cached.Timestamp) {
-		return cached, true
+		return deepCopyResponse(cached), true
 	}
 	return WeatherResponse{}, false
 }
 
-// Put inserts weather telemetry into cache.
+// Put inserts weather telemetry into cache with deep copies of slice structures.
 func (cs *CacheService) Put(city string, response WeatherResponse) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
 	key := strings.ToLower(strings.TrimSpace(city))
-	cs.cache[key] = response
+	cs.cache[key] = deepCopyResponse(response)
 }
 
 // Delete invalidates a cached entry.
@@ -154,6 +176,13 @@ func (cs *CacheService) Delete(city string) {
 
 	key := strings.ToLower(strings.TrimSpace(city))
 	delete(cs.cache, key)
+}
+
+// LocationResult encapsulates geocoding resolution parameters.
+type LocationResult struct {
+	CityName  string
+	Latitude  float64
+	Longitude float64
 }
 
 type geoAPIResponse struct {
@@ -215,6 +244,11 @@ func NewWeatherClient() *WeatherClient {
 		cache:  NewCacheService(),
 		client: &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+// Cache returns the internal cache service reference.
+func (wc *WeatherClient) Cache() *CacheService {
+	return wc.cache
 }
 
 // getSystemLanguage detects system language locale code or defaults to "en".
@@ -279,6 +313,168 @@ func (wc *WeatherClient) reverseGeocode(lat, lon float64, lang string) string {
 		return fmt.Sprintf("%s (%s)", res.Name, res.Country)
 	}
 	return res.Name
+}
+
+// ResolveLocation resolves raw string inputs or coordinate pairs into a structured LocationResult.
+func (wc *WeatherClient) ResolveLocation(city string) (LocationResult, error) {
+	cleanQuery := sanitizeCityQuery(city)
+	sysLang := getSystemLanguage()
+
+	if parsedLat, parsedLon, isCoords := ParseCoordinates(city); isCoords {
+		slog.Info("Coordinates pattern matched. Executing reverse geocoding lookup", "lat", parsedLat, "lon", parsedLon)
+		fullName := wc.reverseGeocode(parsedLat, parsedLon, sysLang)
+		return LocationResult{
+			CityName:  fullName,
+			Latitude:  parsedLat,
+			Longitude: parsedLon,
+		}, nil
+	}
+
+	slog.Info("Executing geocoding lookup", "city", cleanQuery, "lang", sysLang)
+	encodedCity := url.QueryEscape(cleanQuery)
+	geoURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=%s&format=json", encodedCity, sysLang)
+
+	resp, err := wc.client.Get(geoURL)
+	if err != nil {
+		slog.Error("Geocoding network error", "city", cleanQuery, "error", err)
+		return LocationResult{}, fmt.Errorf("geocoding network error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var geoData geoAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&geoData); err != nil || len(geoData.Results) == 0 {
+		slog.Error("Location target unresolved", "city", cleanQuery)
+		return LocationResult{}, fmt.Errorf("location target not found")
+	}
+
+	loc := geoData.Results[0]
+	fullName := loc.Name
+	if loc.Country != "" {
+		fullName = fmt.Sprintf("%s (%s)", loc.Name, loc.Country)
+	}
+
+	return LocationResult{
+		CityName:  fullName,
+		Latitude:  loc.Latitude,
+		Longitude: loc.Longitude,
+	}, nil
+}
+
+// FetchForecastByLocation fetches weather telemetry using resolved coordinates and updates the cache.
+func (wc *WeatherClient) FetchForecastByLocation(loc LocationResult, originalQuery string) (WeatherResponse, error) {
+	forecastURL := fmt.Sprintf(
+		"https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"+
+		"&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m,weather_code"+
+		"&hourly=temperature_2m"+
+		"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code&timezone=auto&forecast_days=14",
+		loc.Latitude, loc.Longitude,
+	)
+
+		slog.Info("Dispatching forecast request", "url", forecastURL)
+
+		wResp, err := wc.client.Get(forecastURL)
+		if err != nil {
+			slog.Error("Forecast network failure", "url", forecastURL, "error", err)
+			return WeatherResponse{}, fmt.Errorf("forecast network error: %w", err)
+		}
+		defer wResp.Body.Close()
+
+		var apiMeteo weatherAPIResponse
+		if err := json.NewDecoder(wResp.Body).Decode(&apiMeteo); err != nil {
+			slog.Error("Forecast payload decoding failed", "error", err)
+			return WeatherResponse{}, fmt.Errorf("forecast decoding error: %w", err)
+		}
+
+		aqiURL := fmt.Sprintf("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%f&longitude=%f&current=european_aqi", loc.Latitude, loc.Longitude)
+		europeanAQI := 0
+		if aqiResp, err := wc.client.Get(aqiURL); err == nil {
+			var apiAQI airQualityAPIResponse
+			if json.NewDecoder(aqiResp.Body).Decode(&apiAQI) == nil {
+				europeanAQI = int(apiAQI.Current.EuropeanAQI)
+			}
+			aqiResp.Body.Close()
+		} else {
+			slog.Warn("Air Quality API degraded gracefully", "error", err)
+		}
+
+		sunriseStr, sunsetStr := "N/A", "N/A"
+		if len(apiMeteo.Daily.Sunrise) > 0 && len(apiMeteo.Daily.Sunrise[0]) >= 16 {
+			sunriseStr = apiMeteo.Daily.Sunrise[0][11:16]
+		}
+		if len(apiMeteo.Daily.Sunset) > 0 && len(apiMeteo.Daily.Sunset[0]) >= 16 {
+			sunsetStr = apiMeteo.Daily.Sunset[0][11:16]
+		}
+
+		moonData := CalculateMoonPhase(time.Now())
+
+		hourlyTemp := make([]float64, 0, 24)
+		hourlyTime := make([]string, 0, 24)
+		if len(apiMeteo.Hourly.Temperature) >= 24 {
+			hourlyTemp = append(hourlyTemp, apiMeteo.Hourly.Temperature[:24]...)
+			hourlyTime = append(hourlyTime, apiMeteo.Hourly.Time[:24]...)
+		}
+
+		currentData := WeatherData{
+			Temperature:       apiMeteo.Current.Temperature,
+			WindSpeed:         apiMeteo.Current.WindSpeed,
+			WindDirection:     apiMeteo.Current.WindDirection,
+			UvIndex:           apiMeteo.Current.UvIndex,
+			PrecipProbability: int(apiMeteo.Current.Precip),
+			Humidity:          int(apiMeteo.Current.Humidity),
+			Sunrise:           sunriseStr,
+			Sunset:            sunsetStr,
+			AirQualityIndex:   europeanAQI,
+			WeatherCode:       apiMeteo.Current.WeatherCode,
+			MoonPhase:         moonData,
+			HourlyTemp:        hourlyTemp,
+			HourlyTime:        hourlyTime,
+		}
+
+		dailyCount := len(apiMeteo.Daily.Time)
+		dailyForecasts := make([]DailyForecast, 0, dailyCount)
+		for i := 0; i < dailyCount; i++ {
+			maxTemp := 0.0
+			if i < len(apiMeteo.Daily.TempMax) {
+				maxTemp = apiMeteo.Daily.TempMax[i]
+			}
+			minTemp := 0.0
+			if i < len(apiMeteo.Daily.TempMin) {
+				minTemp = apiMeteo.Daily.TempMin[i]
+			}
+			precip := 0
+			if i < len(apiMeteo.Daily.PrecipProbability) {
+				precip = int(apiMeteo.Daily.PrecipProbability[i])
+			}
+			code := 0
+			if i < len(apiMeteo.Daily.WeatherCode) {
+				code = apiMeteo.Daily.WeatherCode[i]
+			}
+
+			dailyForecasts = append(dailyForecasts, DailyForecast{
+				Date:              apiMeteo.Daily.Time[i],
+				MaxTemp:           maxTemp,
+				MinTemp:           minTemp,
+				PrecipProbability: precip,
+				WeatherCode:       code,
+			})
+		}
+
+		finalResponse := WeatherResponse{
+			CityName:  loc.CityName,
+			Latitude:  loc.Latitude,
+			Longitude: loc.Longitude,
+			Current:   currentData,
+			Daily:     dailyForecasts,
+			Timestamp: time.Now().UnixMilli(),
+			FromCache: false,
+		}
+
+		cleanQuery := sanitizeCityQuery(originalQuery)
+		wc.cache.Put(originalQuery, finalResponse)
+		wc.cache.Put(cleanQuery, finalResponse)
+		wc.cache.Put(loc.CityName, finalResponse)
+
+		return finalResponse, nil
 }
 
 // CalculateMoonPhase computes lunar phase icon and illumination percentage for a target time.
@@ -354,153 +550,15 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 		return cachedResponse, cachedResponse.CityName, nil
 	}
 
-	sysLang := getSystemLanguage()
-	var lat, lon float64
-	var fullName string
-
-	if parsedLat, parsedLon, isCoords := ParseCoordinates(city); isCoords {
-		lat = parsedLat
-		lon = parsedLon
-		slog.Info("Coordinates pattern matched. Executing reverse geocoding lookup", "lat", lat, "lon", lon)
-		fullName = wc.reverseGeocode(lat, lon, sysLang)
-	} else {
-		slog.Info("Cache MISS or Refresh. Executing geocoding lookup", "city", cleanQuery, "lang", sysLang)
-
-		encodedCity := url.QueryEscape(cleanQuery)
-		geoURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=%s&format=json", encodedCity, sysLang)
-
-		resp, err := wc.client.Get(geoURL)
-		if err != nil {
-			slog.Error("Geocoding network error", "city", cleanQuery, "error", err)
-			return WeatherResponse{}, "", fmt.Errorf("geocoding network error: %w", err)
-		}
-		defer resp.Body.Close()
-
-		var geoData geoAPIResponse
-		if err := json.NewDecoder(resp.Body).Decode(&geoData); err != nil || len(geoData.Results) == 0 {
-			slog.Error("Location target unresolved", "city", cleanQuery)
-			return WeatherResponse{}, "", fmt.Errorf("location target not found")
-		}
-		loc := geoData.Results[0]
-		lat = loc.Latitude
-		lon = loc.Longitude
-		if loc.Country != "" {
-			fullName = fmt.Sprintf("%s (%s)", loc.Name, loc.Country)
-		} else {
-			fullName = loc.Name
-		}
+	loc, err := wc.ResolveLocation(city)
+	if err != nil {
+		return WeatherResponse{}, "", err
 	}
 
-	forecastURL := fmt.Sprintf(
-		"https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"+
-		"&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m,weather_code"+
-		"&hourly=temperature_2m"+
-		"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code&timezone=auto&forecast_days=14",
-		lat, lon,
-	)
+	resp, err := wc.FetchForecastByLocation(loc, city)
+	if err != nil {
+		return WeatherResponse{}, "", err
+	}
 
-		slog.Info("Dispatching forecast request", "url", forecastURL)
-
-		wResp, err := wc.client.Get(forecastURL)
-		if err != nil {
-			slog.Error("Forecast network failure", "url", forecastURL, "error", err)
-			return WeatherResponse{}, "", fmt.Errorf("forecast network error: %w", err)
-		}
-		defer wResp.Body.Close()
-
-		var apiMeteo weatherAPIResponse
-		if err := json.NewDecoder(wResp.Body).Decode(&apiMeteo); err != nil {
-			slog.Error("Forecast payload decoding failed", "error", err)
-			return WeatherResponse{}, "", fmt.Errorf("forecast decoding error: %w", err)
-		}
-
-		aqiURL := fmt.Sprintf("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%f&longitude=%f&current=european_aqi", lat, lon)
-		europeanAQI := 0
-		if aqiResp, err := wc.client.Get(aqiURL); err == nil {
-			var apiAQI airQualityAPIResponse
-			if json.NewDecoder(aqiResp.Body).Decode(&apiAQI) == nil {
-				europeanAQI = int(apiAQI.Current.EuropeanAQI)
-			}
-			aqiResp.Body.Close()
-		} else {
-			slog.Warn("Air Quality API degraded gracefully", "error", err)
-		}
-
-		sunriseStr, sunsetStr := "N/A", "N/A"
-		if len(apiMeteo.Daily.Sunrise) > 0 && len(apiMeteo.Daily.Sunrise[0]) >= 16 {
-			sunriseStr = apiMeteo.Daily.Sunrise[0][11:16]
-		}
-		if len(apiMeteo.Daily.Sunset) > 0 && len(apiMeteo.Daily.Sunset[0]) >= 16 {
-			sunsetStr = apiMeteo.Daily.Sunset[0][11:16]
-		}
-
-		moonData := CalculateMoonPhase(time.Now())
-
-		hourlyTemp := make([]float64, 0, 24)
-		hourlyTime := make([]string, 0, 24)
-		if len(apiMeteo.Hourly.Temperature) >= 24 {
-			hourlyTemp = append(hourlyTemp, apiMeteo.Hourly.Temperature[:24]...)
-			hourlyTime = append(hourlyTime, apiMeteo.Hourly.Time[:24]...)
-		}
-
-		currentData := WeatherData{
-			Temperature:       apiMeteo.Current.Temperature,
-			WindSpeed:         apiMeteo.Current.WindSpeed,
-			WindDirection:     apiMeteo.Current.WindDirection,
-			UvIndex:           apiMeteo.Current.UvIndex,
-			PrecipProbability: int(apiMeteo.Current.Precip),
-			Humidity:          int(apiMeteo.Current.Humidity),
-			Sunrise:           sunriseStr,
-			Sunset:            sunsetStr,
-			AirQualityIndex:   europeanAQI,
-			WeatherCode:       apiMeteo.Current.WeatherCode,
-			MoonPhase:         moonData,
-			HourlyTemp:        hourlyTemp,
-			HourlyTime:        hourlyTime,
-		}
-
-		dailyCount := len(apiMeteo.Daily.Time)
-		dailyForecasts := make([]DailyForecast, 0, dailyCount)
-		for i := 0; i < dailyCount; i++ {
-			maxTemp := 0.0
-			if i < len(apiMeteo.Daily.TempMax) {
-				maxTemp = apiMeteo.Daily.TempMax[i]
-			}
-			minTemp := 0.0
-			if i < len(apiMeteo.Daily.TempMin) {
-				minTemp = apiMeteo.Daily.TempMin[i]
-			}
-			precip := 0
-			if i < len(apiMeteo.Daily.PrecipProbability) {
-				precip = int(apiMeteo.Daily.PrecipProbability[i])
-			}
-			code := 0
-			if i < len(apiMeteo.Daily.WeatherCode) {
-				code = apiMeteo.Daily.WeatherCode[i]
-			}
-
-			dailyForecasts = append(dailyForecasts, DailyForecast{
-				Date:              apiMeteo.Daily.Time[i],
-				MaxTemp:           maxTemp,
-				MinTemp:           minTemp,
-				PrecipProbability: precip,
-				WeatherCode:       code,
-			})
-		}
-
-		finalResponse := WeatherResponse{
-			CityName:  fullName,
-			Latitude:  lat,
-			Longitude: lon,
-			Current:   currentData,
-			Daily:     dailyForecasts,
-			Timestamp: time.Now().UnixMilli(),
-			FromCache: false,
-		}
-
-		wc.cache.Put(city, finalResponse)
-		wc.cache.Put(cleanQuery, finalResponse)
-		wc.cache.Put(fullName, finalResponse)
-
-		return finalResponse, fullName, nil
+	return resp, resp.CityName, nil
 }
