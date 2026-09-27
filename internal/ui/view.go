@@ -402,6 +402,9 @@ func (m Model) View() string {
 		moonStr := fmt.Sprintf("%s %d%%", m.Weather.Current.MoonPhase.PhaseIcon, m.Weather.Current.MoonPhase.IlluminationPercent)
 		renderedMoon := lipgloss.NewStyle().Foreground(Yellow).Bold(true).Render(moonStr)
 
+		condLabel, condArt := GetWeatherCondition(m.Weather.Current.WeatherCode)
+		renderedCondition := lipgloss.NewStyle().Foreground(Cyan).Bold(true).Render(condLabel)
+
 		const labelWidth = 13
 		innerMaxW := leftWidth - 4
 		if innerMaxW < 20 {
@@ -417,17 +420,20 @@ func (m Model) View() string {
 			return row
 		}
 
-		currentInnerContent = fmt.Sprintf(
-			"%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s",
-			formatRow("Temperature:", renderedTemp),
-				formatRow("Humidity:", renderedHumidity),
-					formatRow("Wind:", renderedWind),
-						formatRow("UV Index:", uvDesc),
-							formatRow("Moon Phase:", renderedMoon),
-								formatRow("Sunrise:", lipgloss.NewStyle().Foreground(Blue).Bold(true).Render(m.Weather.Current.Sunrise)),
-									formatRow("Sunset:", lipgloss.NewStyle().Foreground(Blue).Bold(true).Render(m.Weather.Current.Sunset)),
-										formatRow("Air Quality:", aqiDesc),
+		textDetails := fmt.Sprintf(
+			"%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s",
+			formatRow("Condition:", renderedCondition),
+				formatRow("Temperature:", renderedTemp),
+					formatRow("Humidity:", renderedHumidity),
+						formatRow("Wind:", renderedWind),
+							formatRow("UV Index:", uvDesc),
+								formatRow("Moon Phase:", renderedMoon),
+									formatRow("Sunrise:", lipgloss.NewStyle().Foreground(Blue).Bold(true).Render(m.Weather.Current.Sunrise)),
+										formatRow("Sunset:", lipgloss.NewStyle().Foreground(Blue).Bold(true).Render(m.Weather.Current.Sunset)),
+											formatRow("Air Quality:", aqiDesc),
 		)
+
+		currentInnerContent = lipgloss.JoinHorizontal(lipgloss.Top, condArt, "  ", textDetails)
 	} else {
 		currentInnerContent = "STATUS: SYSTEM IDLE\n\nAwaiting dispatcher query..."
 		if m.Err != nil {
@@ -629,7 +635,7 @@ func (m Model) View() string {
 			statusElements = append(statusElements, KeyStyle.Render("Esc / Ctrl+C"), DescStyle.Render("Exit"))
 		}
 
-		// Coordinate e info applicazione nel footer
+		// Contact information and app details in the footer
 		coordsStr := "N/A"
 		coordsStyle := lipgloss.NewStyle().Foreground(LightGray)
 
