@@ -11,7 +11,7 @@ Built on the Bubble Tea framework and styled using Lip Gloss, it orchestrates pa
 - **Coordinates & Reverse Geocoding**: Direct coordinate input parsing (e.g. `41.9028, 12.4964`) with automated reverse geocoding lookup.
 - **Apparent Temperature Calculation**: Calculates real-time perceived temperature ("feels like") based on the Steadman / Australian Apparent Temperature model when atmospheric variance is significant.
 - **Lunar Telemetry**: Real-time lunar phase tracking with visual phase representation and illumination percentage.
-- **In-Memory Cache**: Thread-safe TTL cache layer (`sync.RWMutex`, 30 min expiration) avoiding redundant API requests.
+- **In-Memory Cache**: Thread-safe TTL cache layer (`sync.RWMutex`, 30 min expiration) with automated background garbage collection avoiding redundant API requests.
 - **Recent Searches History**: Dedicated panel tracking recent lookups with quick reload capability (`Enter`).
 - **Dynamic System Locale Detection**: Automatically detects user's system language (`LANG`, `LC_ALL`, `LC_MESSAGES`) to query localized location names via geocoding with English fallback.
 - **Async Visual Feedback**: Animated Lip Gloss-styled spinners integrated with Bubble Tea event loops during network dispatches.
@@ -75,18 +75,19 @@ go build -o weather-tui
 The application integrates with three endpoints from the **Open-Meteo** API ecosystem. All outgoing network requests enforce a strict **10-second timeout boundary**.
 
 1. **Geocoding Engine**
-* **Endpoint**: `https://geocoding-api.open-meteo.com/v1/search` and `https://geocoding-api.open-meteo.com/v1/get`
-* **Parameters**: `name={city}&count=1&language={sys_lang}&format=json` / `latitude={lat}&longitude={lon}`
+
+* **Endpoints**: `https://geocoding-api.open-meteo.com/v1/search` and `https://geocoding-api.open-meteo.com/v1/get`
+* **Parameters**: `name={city}&count=1&language={sys_lang}&format=json` / `latitude={lat}&longitude={lon}&language={sys_lang}&format=json`
 * **Role**: Resolves search queries into coordinates and localized location metadata. Supports direct coordinate queries with reverse geocoding fallback.
 
-
 2. **Meteorological Forecast Engine**
+
 * **Endpoint**: `https://api.open-meteo.com/v1/forecast`
-* **Parameters**: `latitude={lat}&longitude={lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14`
+* **Parameters**: `latitude={lat}&longitude={lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m,weather_code&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code&timezone=auto&forecast_days=14`
 * **Role**: Retrieves real-time atmospheric telemetry, 24-hour hourly temperatures, and 14-day daily forecast data.
 
-
 3. **Air Quality Analyzer**
+
 * **Endpoint**: `https://air-quality-api.open-meteo.com/v1/air-quality`
 * **Parameters**: `latitude={lat}&longitude={lon}&current=european_aqi`
 * **Role**: Queries the European Air Quality Index (AQI) mapped to visual threat indicators (`EXCELLENT` $\le 20$, `POOR` $\le 40$, `CRITICAL` $> 40$).
@@ -96,9 +97,10 @@ The application integrates with three endpoints from the **Open-Meteo** API ecos
 ### Concurrent In-Memory Cache (`CacheService`)
 To minimize network latency and respect public rate limits, weather data is cached internally:
 
-* **Concurrency Control**: Read/Write mutual exclusion (`sync.RWMutex`) guarantees memory safety across asynchronous Bubble Tea commands.
-* **Normalization**: Query strings are automatically sanitized to lowercase.
-* **TTL Validation**: Entries older than 30 minutes trigger a cache `MISS` and execute a fresh network call; otherwise, a cache `HIT` returns data instantly.
+* **Concurrency Control**: Read/Write mutual exclusion (`sync.RWMutex`) guarantees thread safety across asynchronous Bubble Tea commands.
+* **Background Garbage Collection**: Periodic background ticker runs every 10 minutes to evict expired cache items automatically.
+* **Normalization**: Query strings are automatically sanitized to lowercase and trimmed of country suffix formatting.
+* **TTL Validation**: Entries older than 30 minutes trigger a cache `MISS` and execute a fresh network call; otherwise, a cache `HIT` returns data instantly with deep-copied slices to prevent data race issues.
 
 ### Structured Diagnostic Logging (`slog` + `lumberjack`)
 Logs are formatted in **JSON** via Go's standard `log/slog` and written concurrently to file and console outputs using `io.MultiWriter`.
