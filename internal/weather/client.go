@@ -65,14 +65,60 @@ type CacheService struct {
 	mu                sync.RWMutex
 	cache             map[string]WeatherResponse
 	expirationMinutes int64
+	stopChan          chan struct{}
 }
 
-// NewCacheService initializes the cache layer with a default 30-minute expiration TTL.
+// NewCacheService initializes the cache layer with a default 30-minute expiration TTL
+// and starts a background garbage collection worker loop.
 func NewCacheService() *CacheService {
-	return &CacheService{
+	cs := &CacheService{
 		cache:             make(map[string]WeatherResponse),
 		expirationMinutes: 30,
+		stopChan:          make(chan struct{}),
 	}
+
+	go cs.startGarbageCollector(10 * time.Minute)
+
+	return cs
+}
+
+// startGarbageCollector runs a ticker-driven background worker that periodically purges expired cache entries.
+func (cs *CacheService) startGarbageCollector(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+			case <-ticker.C:
+				cs.evictExpired()
+			case <-cs.stopChan:
+				slog.Debug("Cache Garbage Collector background worker stopped")
+				return
+		}
+	}
+}
+
+// evictExpired sweeps through cached entries and removes those exceeding the TTL limit.
+func (cs *CacheService) evictExpired() {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	evictedCount := 0
+	for key, item := range cs.cache {
+		if cs.isExpired(item.Timestamp) {
+			delete(cs.cache, key)
+			evictedCount++
+		}
+	}
+
+	if evictedCount > 0 {
+		slog.Debug("Garbage collector evicted expired cache items", "count", evictedCount)
+	}
+}
+
+// Stop terminates the background garbage collector worker loop.
+func (cs *CacheService) Stop() {
+	close(cs.stopChan)
 }
 
 func (cs *CacheService) isExpired(timestamp int64) bool {
