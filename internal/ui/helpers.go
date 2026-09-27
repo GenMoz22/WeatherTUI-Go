@@ -45,6 +45,50 @@ func DegreesToCompass(degrees float64) string {
 	return fmt.Sprintf("%s %s", arrows[arrowIdx], directions[dirIdx])
 }
 
+// GetWeatherCondition resolves a WMO weather code into a condition description and a styled ASCII art icon.
+func GetWeatherCondition(code int) (string, string) {
+	var label string
+	var icon string
+	var style lipgloss.Style
+
+	switch code {
+		case 0:
+			label = "Clear Sky"
+			style = lipgloss.NewStyle().Foreground(Yellow).Bold(true)
+			icon = style.Render("  \\   /  \n   .-.   \n─ (   ) ─\n   `-`   \n  /   \\  ")
+		case 1, 2, 3:
+			label = "Partly Cloudy"
+			style = lipgloss.NewStyle().Foreground(LightGray).Bold(true)
+			icon = style.Render("   \\  /  \n _ /\"\"\\  \n(   _  ) \n `-(_)-` \n         ")
+		case 45, 48:
+			label = "Foggy"
+			style = lipgloss.NewStyle().Foreground(DarkCyan)
+			icon = style.Render("         \n _ - _ - \n  _ - _  \n _ - _ - \n         ")
+		case 51, 53, 55, 56, 57:
+			label = "Drizzle"
+			style = lipgloss.NewStyle().Foreground(Cyan)
+			icon = style.Render("   .-.   \n  (   ). \n (___(__)\n  ' ' ' '\n ' ' ' ' ")
+		case 61, 63, 65, 66, 67, 80, 81, 82:
+			label = "Rain"
+			style = lipgloss.NewStyle().Foreground(Blue).Bold(true)
+			icon = style.Render("   .-.   \n  (   ). \n (___(__)\n  / / / /\n / / / / ")
+		case 71, 73, 75, 77, 85, 86:
+			label = "Snow"
+			style = lipgloss.NewStyle().Foreground(White).Bold(true)
+			icon = style.Render("   .-.   \n  (   ). \n (___(__)\n  * * * *\n * * * * ")
+		case 95, 96, 99:
+			label = "Thunderstorm"
+			style = lipgloss.NewStyle().Foreground(Orange).Bold(true)
+			icon = style.Render("   .-.   \n  (   ). \n (___(__)\n  /_/_/  \n   / /   ")
+		default:
+			label = "Unknown"
+			style = lipgloss.NewStyle().Foreground(LightGray)
+			icon = style.Render("   .-.   \n  (   ). \n (___(__)\n   ? ?   \n         ")
+	}
+
+	return label, icon
+}
+
 // GetTemperatureStyle returns a Lipgloss style dynamically based on temperature threshold values.
 func GetTemperatureStyle(tempCelsius float64) lipgloss.Style {
 	baseStyle := lipgloss.NewStyle().Bold(true)

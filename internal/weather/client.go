@@ -29,6 +29,7 @@ type DailyForecast struct {
 	MaxTemp           float64
 	MinTemp           float64
 	PrecipProbability int
+	WeatherCode       int
 }
 
 // WeatherData holds atmospheric current metrics and metadata.
@@ -42,6 +43,7 @@ type WeatherData struct {
 	Sunrise           string
 	Sunset            string
 	AirQualityIndex   int
+	WeatherCode       int
 	MoonPhase         MoonPhaseData
 	HourlyTemp        []float64
 	HourlyTime        []string
@@ -132,6 +134,7 @@ type weatherAPIResponse struct {
 		UvIndex       float64 `json:"uv_index"`
 		Precip        float64 `json:"precipitation_probability"`
 		Humidity      float64 `json:"relative_humidity_2m"`
+		WeatherCode   int     `json:"weather_code"`
 	} `json:"current"`
 	Hourly struct {
 		Time        []string  `json:"time"`
@@ -144,6 +147,7 @@ type weatherAPIResponse struct {
 		PrecipProbability []float64 `json:"precipitation_probability_max"`
 		Sunrise           []string  `json:"sunrise"`
 		Sunset            []string  `json:"sunset"`
+		WeatherCode       []int     `json:"weather_code"`
 	} `json:"daily"`
 }
 
@@ -343,9 +347,9 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 
 	forecastURL := fmt.Sprintf(
 		"https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"+
-		"&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m"+
+		"&current=temperature_2m,wind_speed_10m,wind_direction_10m,uv_index,precipitation_probability,relative_humidity_2m,weather_code"+
 		"&hourly=temperature_2m"+
-		"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=14",
+		"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code&timezone=auto&forecast_days=14",
 		lat, lon,
 	)
 
@@ -403,6 +407,7 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 			Sunrise:           sunriseStr,
 			Sunset:            sunsetStr,
 			AirQualityIndex:   europeanAQI,
+			WeatherCode:       apiMeteo.Current.WeatherCode,
 			MoonPhase:         moonData,
 			HourlyTemp:        hourlyTemp,
 			HourlyTime:        hourlyTime,
@@ -423,12 +428,17 @@ func (wc *WeatherClient) GetWeather(city string, forceRefresh bool) (WeatherResp
 			if i < len(apiMeteo.Daily.PrecipProbability) {
 				precip = int(apiMeteo.Daily.PrecipProbability[i])
 			}
+			code := 0
+			if i < len(apiMeteo.Daily.WeatherCode) {
+				code = apiMeteo.Daily.WeatherCode[i]
+			}
 
 			dailyForecasts = append(dailyForecasts, DailyForecast{
 				Date:              apiMeteo.Daily.Time[i],
 				MaxTemp:           maxTemp,
 				MinTemp:           minTemp,
 				PrecipProbability: precip,
+				WeatherCode:       code,
 			})
 		}
 
