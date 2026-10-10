@@ -44,7 +44,7 @@ func (m Model) renderHelpOverlay() string {
 
 // renderSmallScreenLayout renders a compact layout for low-resolution terminals.
 // Additional telemetry lines are dynamically rendered in progressive order based on available height,
-// maintaining standard layout field sequence.
+// maintaining standard layout field sequence and inline formatting rules.
 func (m Model) renderSmallScreenLayout() string {
 	width := m.TermWidth
 	availableHeight := m.TermHeight - 1
@@ -100,6 +100,13 @@ func (m Model) renderSmallScreenLayout() string {
 		condLabel, condArt := GetWeatherCondition(m.Weather.Current.WeatherCode)
 		renderedCondition := lipgloss.NewStyle().Foreground(Cyan).Bold(true).Render(condLabel)
 
+		// Include precipitation probability inline with Condition if sufficient space
+		if len(m.Weather.Daily) > 0 {
+			todayPrecip := m.Weather.Daily[0].PrecipProbability
+			precipInline := lipgloss.NewStyle().Foreground(Blue).Render(fmt.Sprintf(" (Precip: %d%%)", todayPrecip))
+			renderedCondition = fmt.Sprintf("%s%s", renderedCondition, precipInline)
+		}
+
 		rawCelsius := m.Weather.Current.Temperature
 		tempVal := rawCelsius
 		tempUnitStr := "°C"
@@ -110,6 +117,20 @@ func (m Model) renderSmallScreenLayout() string {
 
 		tempStyle := GetTemperatureStyle(rawCelsius)
 		renderedTemp := tempStyle.Render(fmt.Sprintf("%.1f %s", tempVal, tempUnitStr))
+
+		// Include daily max and min temperature inline with Temperature if sufficient space
+		if len(m.Weather.Daily) > 0 {
+			maxT := m.Weather.Daily[0].MaxTemp
+			minT := m.Weather.Daily[0].MinTemp
+			if m.Imperial {
+				maxT = CelsiusToFahrenheit(maxT)
+				minT = CelsiusToFahrenheit(minT)
+			}
+			maxStyle := GetTemperatureStyle(m.Weather.Daily[0].MaxTemp)
+			minStyle := GetTemperatureStyle(m.Weather.Daily[0].MinTemp)
+			rangeInline := fmt.Sprintf(" (Max: %s / Min: %s)", maxStyle.Render(fmt.Sprintf("%.1f%s", maxT, tempUnitStr)), minStyle.Render(fmt.Sprintf("%.1f%s", minT, tempUnitStr)))
+			renderedTemp = fmt.Sprintf("%s%s", renderedTemp, rangeInline)
+		}
 
 		humidityStyle := GetHumidityStyle(m.Weather.Current.Humidity)
 		renderedHumidity := humidityStyle.Render(fmt.Sprintf("%d%%", m.Weather.Current.Humidity))
@@ -152,12 +173,13 @@ func (m Model) renderSmallScreenLayout() string {
 		innerMaxHeight := monitorBoxHeight - 2
 		linesLeft := innerMaxHeight - len(rows)
 
-		// 1) UV Index (Priority 1)
-		var uvRow string
+		// Progressive telemetry elements ordered strictly matching standard dashboard priority:
+		// 1) UV Index, 2) Air Quality, 3) Moon Phase, 4) Sunset, 5) Sunrise
+		var uvRow, aqiRow, moonRow, sunsetRow, sunriseRow string
+
 		if linesLeft > 0 {
 			uvVal := m.Weather.Current.UvIndex
 			uvDesc := GetUVIndexDesc(uvVal)
-			// Fallback to compact string if horizontal bar exceeds width
 			if lipgloss.Width(formatRow("UV Index:", uvDesc)) > innerMaxW {
 				var label string
 				var style lipgloss.Style
@@ -178,8 +200,6 @@ func (m Model) renderSmallScreenLayout() string {
 			linesLeft--
 		}
 
-		// 2) Air Quality (Priority 2)
-		var aqiRow string
 		if linesLeft > 0 {
 			aqiVal := m.Weather.Current.AirQualityIndex
 			var aqiDesc string
@@ -194,8 +214,6 @@ func (m Model) renderSmallScreenLayout() string {
 			linesLeft--
 		}
 
-		// 3) Moon Phase (Priority 3)
-		var moonRow string
 		if linesLeft > 0 {
 			moonStr := fmt.Sprintf("%s %d%%", m.Weather.Current.MoonPhase.PhaseIcon, m.Weather.Current.MoonPhase.IlluminationPercent)
 			renderedMoon := lipgloss.NewStyle().Foreground(Yellow).Bold(true).Render(moonStr)
@@ -203,41 +221,36 @@ func (m Model) renderSmallScreenLayout() string {
 			linesLeft--
 		}
 
-		// 4) Sunrise (Priority 4)
-		var sunriseRow string
-		if linesLeft > 0 {
-			renderedSunrise := lipgloss.NewStyle().Foreground(Blue).Bold(true).Render(m.Weather.Current.Sunrise)
-			sunriseRow = formatRow("Sunrise:", renderedSunrise)
-			linesLeft--
-		}
-
-		// 5) Sunset (Priority 5)
-		var sunsetRow string
 		if linesLeft > 0 {
 			renderedSunset := lipgloss.NewStyle().Foreground(Blue).Bold(true).Render(m.Weather.Current.Sunset)
 			sunsetRow = formatRow("Sunset:", renderedSunset)
 			linesLeft--
 		}
 
-		// Append calculated rows in standard layout sequence:
-		// UV Index -> Moon Phase -> Sunrise -> Sunset -> Air Quality
+		if linesLeft > 0 {
+			renderedSunrise := lipgloss.NewStyle().Foreground(Blue).Bold(true).Render(m.Weather.Current.Sunrise)
+			sunriseRow = formatRow("Sunrise:", renderedSunrise)
+			linesLeft--
+		}
+
+		// Append items in correct strict sequence (UV Index -> Air Quality -> Moon Phase -> Sunset -> Sunrise)
 		if uvRow != "" {
 			rows = append(rows, uvRow)
-		}
-		if moonRow != "" {
-			rows = append(rows, moonRow)
-		}
-		if sunriseRow != "" {
-			rows = append(rows, sunriseRow)
-		}
-		if sunsetRow != "" {
-			rows = append(rows, sunsetRow)
 		}
 		if aqiRow != "" {
 			rows = append(rows, aqiRow)
 		}
+		if moonRow != "" {
+			rows = append(rows, moonRow)
+		}
+		if sunsetRow != "" {
+			rows = append(rows, sunsetRow)
+		}
+		if sunriseRow != "" {
+			rows = append(rows, sunriseRow)
+		}
 
-		// 6) ASCII Icon Condition
+		// 6) ASCII Icon Condition (if height permits)
 		if linesLeft >= 5 {
 			currentInnerContent = lipgloss.JoinHorizontal(lipgloss.Top, condArt, "  ", strings.Join(rows, "\n"))
 		} else {
